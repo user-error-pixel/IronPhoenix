@@ -179,14 +179,6 @@ bool Parser::parseFen(Position& pos, const std::string& fen) {
 
     pos.turn = sideToMove;
 
-    // 1: is dead?         skip for now
-    // 2: kingside castle  skip for now
-    // 3: queenside castle skip for now
-    // 4: extra flags      skip for now
-    // 5: halfmove         skip for now
-    // 6: enPassant OR board
-    // 7: board if enPassant exists
-
     int boardPartIndex = -1;
 
     for (int i = 6; i < static_cast<int>(parts.size()); ++i) {
@@ -206,7 +198,7 @@ bool Parser::parseFen(Position& pos, const std::string& fen) {
         return false;
     }
 
-    if (boardPartIndex == 7) {
+    if (boardPartIndex > 6) {
         const std::string& epToken = parts[6];
 
         if (epToken.find("enPassant") != std::string::npos) {
@@ -217,6 +209,8 @@ bool Parser::parseFen(Position& pos, const std::string& fen) {
     if (!parseBoard(pos, parts[boardPartIndex])) {
         return false;
     }
+
+    parseCastlingRights(pos, parts[2], parts[3]);
 
     pos.key = computeZobristKey(pos);
 
@@ -351,6 +345,26 @@ bool Parser::getSquares(int& from, int& to, const std::string& uciMove) const {
     to = squareFromString(toText);
 
     return from != -1 && to != -1;
+}
+
+void Parser::parseCastlingRights(Position& pos, const std::string& ks, const std::string& qs) const {
+    auto apply = [&](const std::string& text, int side) {
+        int color = RED;
+
+        for (char c : text) {
+            if (c == '0' || c == '1') {
+                setCastlingRight(pos, color, side, c == '1');
+                color++;
+
+                if (color > GREEN) {
+                    break;
+                }
+            }
+        }
+        };
+
+    apply(ks, CASTLE_KINGSIDE);
+    apply(qs, CASTLE_QUEENSIDE);
 }
 
 bool Parser::parseEnPassant(Position& pos, const std::string& epToken) const {

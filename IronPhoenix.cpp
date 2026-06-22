@@ -262,6 +262,11 @@ void initStartPosition(Position& pos) {
         }
     }
 
+    for (int color = RED; color <= GREEN; ++color) {
+        setCastlingRight(pos, color, CASTLE_KINGSIDE, true);
+        setCastlingRight(pos, color, CASTLE_QUEENSIDE, true);
+    }
+
     pos.turn = RED;
     pos.ply = 0;
     pos.halfmoveClock = 0;

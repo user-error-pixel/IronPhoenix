@@ -17,14 +17,53 @@ constexpr int YELLOW_PROMO_ROW = 10;
 constexpr int BLUE_PROMO_COL = 11;
 constexpr int GREEN_PROMO_COL = 4;
 
+constexpr int knightOffsets[8] = {
+    -18, -33,
+    -31, -14,
+     18,  33,
+     31,  14
+};
+
+constexpr int DIR_N = -16;
+constexpr int DIR_S = 16;
+constexpr int DIR_E = 1;
+constexpr int DIR_W = -1;
+
+constexpr int DIR_NE = DIR_N + DIR_E;
+constexpr int DIR_NW = DIR_N + DIR_W;
+constexpr int DIR_SE = DIR_S + DIR_E;
+constexpr int DIR_SW = DIR_S + DIR_W;
+
+constexpr int rookDirs[4] = {
+    DIR_N, DIR_S, DIR_E, DIR_W
+};
+
+constexpr int bishopDirs[4] = {
+    DIR_NE, DIR_NW, DIR_SE, DIR_SW
+};
+
+constexpr int queenDirs[8] = {
+    DIR_N, DIR_S, DIR_E, DIR_W,
+    DIR_NE, DIR_NW, DIR_SE, DIR_SW
+};
+
+constexpr int kingOffsets[8] = {
+    DIR_N, DIR_S, DIR_E, DIR_W,
+    DIR_NE, DIR_NW, DIR_SE, DIR_SW
+};
+
 constexpr Score INF = 30000000;
 constexpr Score MATE_SCORE = 29000000;
 
 constexpr int BOARD_WIDTH = 16;
 constexpr int BOARD_RANKS = 14;
 
+constexpr int CASTLE_KINGSIDE = 0;
+constexpr int CASTLE_QUEENSIDE = 1;
+
 extern uint64_t zobristPiece[5][7][BOARD_SIZE];
 extern uint64_t zobristEp[5][BOARD_SIZE];
+extern uint64_t zobristCastle[5][2];
 extern uint64_t zobristTurn[5];
 
 void initZobrist();
@@ -184,6 +223,8 @@ struct Position {
 
     int pieceIndex[BOARD_SIZE];
 
+    bool castlingRights[5][2];
+
     int enPassantSq[5];
 
     int kingSq[5];
@@ -206,6 +247,7 @@ struct Position {
         std::memset(pieceIndex, -1, sizeof(pieceIndex));
         std::memset(kingSq, 0, sizeof(kingSq));
         std::memset(enPassantSq, -1, sizeof(enPassantSq));
+        std::memset(castlingRights, 0, sizeof(castlingRights));
 
         turn = RED;
         halfmoveClock = 0;
@@ -225,6 +267,169 @@ struct Position {
         return board[sq] != EMPTY;
     }
 };
+
+inline constexpr int sqCR(int file, int rank) {
+    return (BOARD_RANKS - rank) * MAILBOX_WIDTH + file;
+}
+
+struct CastleInfo {
+    int kingFrom;
+    int kingTo;
+    int rookFrom;
+    int rookTo;
+};
+
+inline bool getCastleInfo(int color, int side, CastleInfo& info) {
+    switch (color) {
+    case RED:
+        info.kingFrom = sqCR(8, 1);
+        if (side == CASTLE_KINGSIDE) {
+            info.kingTo   = sqCR(10, 1);
+            info.rookFrom = sqCR(11, 1);
+            info.rookTo   = sqCR(9, 1);
+        }
+        else {
+            info.kingTo   = sqCR(6, 1);
+            info.rookFrom = sqCR(4, 1);
+            info.rookTo   = sqCR(7, 1);
+        }
+        return true;
+
+    case YELLOW:
+        info.kingFrom = sqCR(7, 14);
+        if (side == CASTLE_KINGSIDE) {
+            info.kingTo   = sqCR(9, 14);
+            info.rookFrom = sqCR(11, 14);
+            info.rookTo   = sqCR(8, 14);
+        }
+        else {
+            info.kingTo   = sqCR(5, 14);
+            info.rookFrom = sqCR(4, 14);
+            info.rookTo   = sqCR(6, 14);
+        }
+        return true;
+
+    case BLUE:
+        info.kingFrom = sqCR(1, 7);
+        if (side == CASTLE_KINGSIDE) {
+            info.kingTo   = sqCR(1, 9);
+            info.rookFrom = sqCR(1, 11);
+            info.rookTo   = sqCR(1, 8);
+        }
+        else {
+            info.kingTo   = sqCR(1, 5);
+            info.rookFrom = sqCR(1, 4);
+            info.rookTo   = sqCR(1, 6);
+        }
+        return true;
+
+    case GREEN:
+        info.kingFrom = sqCR(14, 8);
+        if (side == CASTLE_KINGSIDE) {
+            info.kingTo   = sqCR(14, 10);
+            info.rookFrom = sqCR(14, 11);
+            info.rookTo   = sqCR(14, 9);
+        }
+        else {
+            info.kingTo   = sqCR(14, 6);
+            info.rookFrom = sqCR(14, 4);
+            info.rookTo   = sqCR(14, 7);
+        }
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+inline int castleSideFromKingMove(int color, int from, int to) {
+    CastleInfo ks;
+    CastleInfo qs;
+
+    if (getCastleInfo(color, CASTLE_KINGSIDE, ks) &&
+        from == ks.kingFrom &&
+        to == ks.kingTo) {
+        return CASTLE_KINGSIDE;
+    }
+
+    if (getCastleInfo(color, CASTLE_QUEENSIDE, qs) &&
+        from == qs.kingFrom &&
+        to == qs.kingTo) {
+        return CASTLE_QUEENSIDE;
+    }
+
+    return -1;
+}
+
+inline void setCastlingRight(Position& pos, int color, int side, bool value) {
+    if (color < RED || color > GREEN || side < 0 || side > 1) {
+        return;
+    }
+
+    if (pos.castlingRights[color][side] == value) {
+        return;
+    }
+
+    pos.key ^= zobristCastle[color][side];
+    pos.castlingRights[color][side] = value;
+}
+
+inline void clearCastlingRight(Position& pos, int color, int side) {
+    setCastlingRight(pos, color, side, false);
+}
+
+inline void clearBothCastlingRights(Position& pos, int color) {
+    clearCastlingRight(pos, color, CASTLE_KINGSIDE);
+    clearCastlingRight(pos, color, CASTLE_QUEENSIDE);
+}
+
+struct History {
+    int from;
+    int to;
+
+    int moved;
+    int movedColor;
+
+    int captured;
+    int capturedColor;
+
+    int promotion;
+    int flag;
+
+    int oldKingSq;
+    int oldHalfmoveClock;
+    int oldTurn;
+
+    bool oldCastlingRights[5][2];
+
+    int oldEnPassantSq[5];
+
+    uint64_t oldKey;
+};
+
+inline void updateCastlingRightsAfterMove(Position& pos, const Move& m, const History& h) {
+    if (m.moved == KING) {
+        clearBothCastlingRights(pos, m.movedColor);
+    }
+
+    if (m.moved == ROOK) {
+        for (int side = 0; side < 2; ++side) {
+            CastleInfo ci;
+            if (getCastleInfo(m.movedColor, side, ci) && m.from == ci.rookFrom) {
+                clearCastlingRight(pos, m.movedColor, side);
+            }
+        }
+    }
+
+    if (h.captured == ROOK && h.capturedColor >= RED && h.capturedColor <= GREEN) {
+        for (int side = 0; side < 2; ++side) {
+            CastleInfo ci;
+            if (getCastleInfo(h.capturedColor, side, ci) && h.to == ci.rookFrom) {
+                clearCastlingRight(pos, h.capturedColor, side);
+            }
+        }
+    }
+}
 
 uint64_t computeZobristKey(const Position& pos);
 
@@ -296,28 +501,6 @@ void initPawnInfo();
 void initKnightInfo(const Position& pos);
 void initKingInfo(const Position& pos);
 
-struct History {
-    int from;
-    int to;
-
-    int moved;
-    int movedColor;
-
-    int captured;
-    int capturedColor;
-
-    int promotion;
-    int flag;
-
-    int oldKingSq;
-    int oldHalfmoveClock;
-    int oldTurn;
-
-    int oldEnPassantSq[5];
-
-    uint64_t oldKey;
-};
-
 inline History doMove(Position& pos, const Move& m) {
     History h;
 
@@ -340,6 +523,8 @@ inline History doMove(Position& pos, const Move& m) {
 
     std::memcpy(h.oldEnPassantSq, pos.enPassantSq, sizeof(pos.enPassantSq));
 
+    std::memcpy(h.oldCastlingRights, pos.castlingRights, sizeof(pos.castlingRights));
+
     pos.key ^= zobristTurn[pos.turn];
 
     if (pos.enPassantSq[m.movedColor] != -1) {
@@ -361,7 +546,18 @@ inline History doMove(Position& pos, const Move& m) {
         removePiece(pos, m.to);
     }
 
-    movePiece(pos, m.from, m.to);
+    if (m.flag & CASTLE) {
+        const int side = castleSideFromKingMove(m.movedColor, m.from, m.to);
+
+        CastleInfo ci;
+        getCastleInfo(m.movedColor, side, ci);
+
+        movePiece(pos, ci.kingFrom, ci.kingTo);
+        movePiece(pos, ci.rookFrom, ci.rookTo);
+    }
+    else {
+        movePiece(pos, m.from, m.to);
+    }
 
     if (m.isPromotion()) {
         pos.key ^= zobristPiece[m.movedColor][PAWN][m.to];
@@ -372,11 +568,11 @@ inline History doMove(Position& pos, const Move& m) {
 
     if (m.flag & DOUBLE_PAWN_PUSH) {
         const int skippedSq = m.from + pawnInfo[m.movedColor].forward;
-
         pos.key ^= zobristEp[pos.turn][skippedSq];
-
         pos.enPassantSq[m.movedColor] = skippedSq;
     }
+
+    updateCastlingRightsAfterMove(pos, m, h);
 
     pos.turn++;
 
@@ -399,9 +595,19 @@ inline void undoMove(Position& pos, const Move& m, const History& h) {
 
     std::memcpy(pos.enPassantSq, h.oldEnPassantSq, sizeof(pos.enPassantSq));
 
-    pos.board[m.to] = h.moved;
+    if (m.flag & CASTLE) {
+        const int side = castleSideFromKingMove(h.movedColor, h.from, h.to);
 
-    movePiece(pos, m.to, m.from);
+        CastleInfo ci;
+        getCastleInfo(h.movedColor, side, ci);
+
+        movePiece(pos, ci.kingTo, ci.kingFrom);
+        movePiece(pos, ci.rookTo, ci.rookFrom);
+    }
+    else {
+        pos.board[m.to] = h.moved;
+        movePiece(pos, m.to, m.from);
+    }
 
     if (h.captured != EMPTY) {
         if (h.flag & EP_CAPTURE) {
@@ -412,6 +618,8 @@ inline void undoMove(Position& pos, const Move& m, const History& h) {
             addPiece(pos, h.to, h.captured, h.capturedColor);
         }
     }
+
+    std::memcpy(pos.castlingRights, h.oldCastlingRights, sizeof(pos.castlingRights));
 
     pos.key = h.oldKey;
 }
@@ -510,28 +718,107 @@ inline void addDoublePawnMove(
     ));
 }
 
-constexpr int DIR_N = -16;
-constexpr int DIR_S = 16;
-constexpr int DIR_E = 1;
-constexpr int DIR_W = -1;
+inline bool attacksFromSlider(
+    const Position& pos,
+    int from,
+    int target,
+    const int* dirs,
+    int dirCount
+) {
+    for (int i = 0; i < dirCount; ++i) {
+        int dir = dirs[i];
+        int sq = from + dir;
 
-constexpr int DIR_NE = DIR_N + DIR_E;
-constexpr int DIR_NW = DIR_N + DIR_W;
-constexpr int DIR_SE = DIR_S + DIR_E;
-constexpr int DIR_SW = DIR_S + DIR_W;
+        while (pos.isValidSquare(sq)) {
+            if (sq == target) {
+                return true;
+            }
 
-constexpr int rookDirs[4] = {
-    DIR_N, DIR_S, DIR_E, DIR_W
-};
+            if (pos.board[sq] != EMPTY) {
+                break;
+            }
 
-constexpr int bishopDirs[4] = {
-    DIR_NE, DIR_NW, DIR_SE, DIR_SW
-};
+            sq += dir;
+        }
+    }
 
-constexpr int queenDirs[8] = {
-    DIR_N, DIR_S, DIR_E, DIR_W,
-    DIR_NE, DIR_NW, DIR_SE, DIR_SW
-};
+    return false;
+}
+
+inline bool pieceAttacksSquare(
+    const Position& pos,
+    int from,
+    int piece,
+    int color,
+    int target
+) {
+    switch (piece) {
+    case KNIGHT:
+        for (int offset : knightOffsets) {
+            if (from + offset == target && pos.isValidSquare(target)) {
+                return true;
+            }
+        }
+        return false;
+
+    case BISHOP:
+        return attacksFromSlider(pos, from, target, bishopDirs, 4);
+
+    case ROOK:
+        return attacksFromSlider(pos, from, target, rookDirs, 4);
+
+    case QUEEN:
+        return attacksFromSlider(pos, from, target, queenDirs, 8);
+
+    case KING:
+        for (int offset : kingOffsets) {
+            if (from + offset == target && pos.isValidSquare(target)) {
+                return true;
+            }
+        }
+        return false;
+
+    case PAWN: {
+        const PawnMoveInfo& p = pawnInfo[color];
+        return from + p.capLeft == target || from + p.capRight == target;
+    }
+
+    default:
+        return false;
+    }
+}
+
+inline bool isSquareAttackedByTeam(
+    const Position& pos,
+    int target,
+    int attackingTeam
+) {
+    for (int color = RED; color <= GREEN; ++color) {
+        if (teamOfColor(color) != attackingTeam) {
+            continue;
+        }
+
+        int count = pos.pieceCount[color];
+
+        for (int i = 0; i < count; ++i) {
+            int from = pos.pieceList[color][i];
+            int piece = pos.board[from];
+
+            if (pieceAttacksSquare(pos, from, piece, color, target)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+inline bool inCheck(const Position& pos, int color) {
+    int king = pos.kingSq[color];
+    int enemyTeam = teamOfColor(color) == TEAM_RY ? TEAM_BG : TEAM_RY;
+
+    return isSquareAttackedByTeam(pos, king, enemyTeam);
+}
 
 inline void tryAddMove(
     const Position& pos,
@@ -578,12 +865,105 @@ inline void tryAddMove(
     ));
 }
 
-constexpr int knightOffsets[8] = {
-    -18, -33,
-    -31, -14,
-     18,  33,
-     31,  14
-};
+inline bool squaresBetweenEmpty(const Position& pos, int from, int to) {
+    const int diff = to - from;
+
+    int step = 0;
+
+    if (diff % MAILBOX_WIDTH == 0) {
+        step = diff > 0 ? MAILBOX_WIDTH : -MAILBOX_WIDTH;
+    }
+    else {
+        step = diff > 0 ? 1 : -1;
+    }
+
+    for (int sq = from + step; sq != to; sq += step) {
+        if (!pos.isValidSquare(sq) || pos.board[sq] != EMPTY) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+inline bool canCastleSide(const Position& pos, int color, int side) {
+    CastleInfo ci;
+
+    if (!getCastleInfo(color, side, ci)) {
+        return false;
+    }
+
+    if (!pos.castlingRights[color][side]) {
+        return false;
+    }
+
+    if (pos.board[ci.kingFrom] != KING || pos.color[ci.kingFrom] != color) {
+        return false;
+    }
+
+    if (pos.board[ci.rookFrom] != ROOK || pos.color[ci.rookFrom] != color) {
+        return false;
+    }
+
+    if (!squaresBetweenEmpty(pos, ci.kingFrom, ci.rookFrom)) {
+        return false;
+    }
+
+    const int enemyTeam = teamOfColor(color) == TEAM_RY ? TEAM_BG : TEAM_RY;
+
+    if (isSquareAttackedByTeam(pos, ci.kingFrom, enemyTeam)) {
+        return false;
+    }
+
+    const int kingStep = ci.kingTo > ci.kingFrom
+        ? ((ci.kingTo - ci.kingFrom) % MAILBOX_WIDTH == 0 ? MAILBOX_WIDTH : 1)
+        : ((ci.kingFrom - ci.kingTo) % MAILBOX_WIDTH == 0 ? -MAILBOX_WIDTH : -1);
+
+    const int kingPassSq = ci.kingFrom + kingStep;
+
+    if (isSquareAttackedByTeam(pos, kingPassSq, enemyTeam)) {
+        return false;
+    }
+
+    if (isSquareAttackedByTeam(pos, ci.kingTo, enemyTeam)) {
+        return false;
+    }
+
+    if (isSquareAttackedByTeam(pos, ci.rookTo, enemyTeam)) {
+        return false;
+    }
+
+    return true;
+}
+
+inline void generateCastlingMoves(const Position& pos, MoveList& list, int from, int color) {
+    for (int side = 0; side < 2; ++side) {
+        CastleInfo ci;
+
+        if (!getCastleInfo(color, side, ci)) {
+            continue;
+        }
+
+        if (from != ci.kingFrom) {
+            continue;
+        }
+
+        if (!canCastleSide(pos, color, side)) {
+            continue;
+        }
+
+        list.push(Move(
+            ci.kingFrom,
+            ci.kingTo,
+            KING,
+            EMPTY,
+            EMPTY,
+            CASTLE,
+            color,
+            NO_COLOR
+        ));
+    }
+}
 
 inline void generateKnightMoves(
     const Position& pos,
@@ -597,11 +977,6 @@ inline void generateKnightMoves(
     }
 }
 
-constexpr int kingOffsets[8] = {
-    DIR_N, DIR_S, DIR_E, DIR_W,
-    DIR_NE, DIR_NW, DIR_SE, DIR_SW
-};
-
 inline void generateKingMoves(
     const Position& pos,
     MoveList& list,
@@ -612,6 +987,8 @@ inline void generateKingMoves(
         int to = kingMoves[from][i];
         tryAddMove(pos, list, from, to, KING, color);
     }
+
+    generateCastlingMoves(pos, list, from, color);
 }
 
 inline void generateSliderMoves(
@@ -840,108 +1217,6 @@ inline void generateMoves(const Position& pos, MoveList& list, int color) {
             break;
         }
     }
-}
-
-inline bool attacksFromSlider(
-    const Position& pos,
-    int from,
-    int target,
-    const int* dirs,
-    int dirCount
-) {
-    for (int i = 0; i < dirCount; ++i) {
-        int dir = dirs[i];
-        int sq = from + dir;
-
-        while (pos.isValidSquare(sq)) {
-            if (sq == target) {
-                return true;
-            }
-
-            if (pos.board[sq] != EMPTY) {
-                break;
-            }
-
-            sq += dir;
-        }
-    }
-
-    return false;
-}
-
-inline bool pieceAttacksSquare(
-    const Position& pos,
-    int from,
-    int piece,
-    int color,
-    int target
-) {
-    switch (piece) {
-    case KNIGHT:
-        for (int offset : knightOffsets) {
-            if (from + offset == target && pos.isValidSquare(target)) {
-                return true;
-            }
-        }
-        return false;
-
-    case BISHOP:
-        return attacksFromSlider(pos, from, target, bishopDirs, 4);
-
-    case ROOK:
-        return attacksFromSlider(pos, from, target, rookDirs, 4);
-
-    case QUEEN:
-        return attacksFromSlider(pos, from, target, queenDirs, 8);
-
-    case KING:
-        for (int offset : kingOffsets) {
-            if (from + offset == target && pos.isValidSquare(target)) {
-                return true;
-            }
-        }
-        return false;
-
-    case PAWN: {
-        const PawnMoveInfo& p = pawnInfo[color];
-        return from + p.capLeft == target || from + p.capRight == target;
-    }
-
-    default:
-        return false;
-    }
-}
-
-inline bool isSquareAttackedByTeam(
-    const Position& pos,
-    int target,
-    int attackingTeam
-) {
-    for (int color = RED; color <= GREEN; ++color) {
-        if (teamOfColor(color) != attackingTeam) {
-            continue;
-        }
-
-        int count = pos.pieceCount[color];
-
-        for (int i = 0; i < count; ++i) {
-            int from = pos.pieceList[color][i];
-            int piece = pos.board[from];
-
-            if (pieceAttacksSquare(pos, from, piece, color, target)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-inline bool inCheck(const Position& pos, int color) {
-    int king = pos.kingSq[color];
-    int enemyTeam = teamOfColor(color) == TEAM_RY ? TEAM_BG : TEAM_RY;
-
-    return isSquareAttackedByTeam(pos, king, enemyTeam);
 }
 
 inline void generateLegalMoves(Position& pos, MoveList& legal, int color) {

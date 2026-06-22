@@ -26,6 +26,8 @@ private:
 
     bool parseBoard(Position& pos, const std::string& boardToken) const;
 
+    void parseCastlingRights(Position& pos, const std::string& ks, const std::string& qs) const;
+
     bool parseEnPassant(Position& pos, const std::string& epToken) const;
 
     static std::string trim(const std::string& s);
