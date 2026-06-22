@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
+#include <thread>
+#include <atomic>
+#include <mutex>
 
 using Score = int;
 using Depth = int;

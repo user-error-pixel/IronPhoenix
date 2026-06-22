@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <string>
 #include <cstdint>
 #include "main.h"
@@ -55,6 +56,8 @@ public:
         Score alpha,
         Score beta
     );
+
+    void stop();
 
     SearchStats stats;
 

@@ -507,6 +507,8 @@ void printPseudoMoves(Position& pos) {
 
 int main()
 {
+    std::cout.setf(std::ios::unitbuf);
+
     Parser parser;
 
     initZobrist();
@@ -524,28 +526,55 @@ int main()
     TranspositionTable TT;
     TT.resizeMB(64);
 
-    auto search = std::make_unique<Search>(TT);
+    std::thread searchThread;
+    std::atomic<bool> searching = false;
+    std::mutex posMutex;
 
-    std::cout << "Iron Phoenix by Nicholas English - v1.0.0\n";
+    auto search = std::make_unique<Search>(TT);
 
     std::string line;
 
     while (std::getline(std::cin, line)) {
         if (line == "uci") {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+            
             std::cout << "id name Iron Phoenix\n";
             std::cout << "id author Nicholas English\n";
             std::cout << "uciok\n";
         }
         else if (line == "isready") {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+            
             std::cout << "readyok\n";
         }
         else if (line == "ucinewgame") {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             initStartPosition(pos);
         }
         else if (line.rfind("position", 0) == 0) {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             handlePosition(pos, parser, line);
         }
         else if (line.rfind("go", 0) == 0) {
+            if (searching) {
+                std::cout << "info string search already running\n";
+                continue;
+            }
+
             std::istringstream iss(line);
 
             std::string token;
@@ -563,16 +592,29 @@ int main()
                 }
             }
 
-            Move bestMove = search->findBestMove(pos, depth, movetimeMs);
+            Position searchPos = pos;
 
-            if (bestMove.from == 0 && bestMove.to == 0) {
-                std::cout << "bestmove 0000\n";
-            }
-            else {
-                std::cout << "bestmove " << moveToUci(bestMove) << "\n";
-            }
+            searching = true;
+
+            searchThread = std::thread([&, searchPos, depth, movetimeMs]() mutable {
+                Move bestMove = search->findBestMove(searchPos, depth, movetimeMs);
+
+                if (bestMove.from == 0 && bestMove.to == 0) {
+                    std::cout << "bestmove 0000\n";
+                }
+                else {
+                    std::cout << "bestmove " << moveToUci(bestMove) << "\n";
+                }
+
+                searching = false;
+            });
         }
         else if (line.rfind("perft", 0) == 0) {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             std::istringstream iss(line);
 
             std::string token;
@@ -584,6 +626,11 @@ int main()
             runPerft(pos, depth);
         }
         else if (line.rfind("divide", 0) == 0) {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             std::istringstream iss(line);
 
             std::string token;
@@ -595,6 +642,11 @@ int main()
             perftDivide(pos, depth);
         }
         else if (line.rfind("perftdebug", 0) == 0) {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             std::istringstream iss(line);
 
             std::string token;
@@ -606,15 +658,51 @@ int main()
             runPerftDebug(pos, depth);
         }
         else if (line == "d") {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             printBoard(pos);
         }
         else if (line == "moves") {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             printAvailableMoves(pos);
         }
         else if (line == "pseudomoves") {
+            if (searching) {
+                std::cout << "info string command ignored while searching, send stop first\n";
+                continue;
+            }
+
             printPseudoMoves(pos);
         }
+        else if (line == "stop") {
+            if (searching) {
+                search->stop();
+
+                if (searchThread.joinable()) {
+                    searchThread.join();
+                }
+
+                searching = false;
+            }
+        }
         else if (line == "quit") {
+            if (searching) {
+                search->stop();
+
+                if (searchThread.joinable()) {
+                    searchThread.join();
+                }
+
+                searching = false;
+            }
+
             break;
         }
     }

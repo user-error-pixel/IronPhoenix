@@ -4,6 +4,8 @@
 #include "search.h"
 #include "preft.h"
 
+std::atomic<bool> stopSearch = false;
+
 Search::Search(TranspositionTable& table)
     : tt(table),
     rootBestMove() {
@@ -153,6 +155,10 @@ void Search::updateSelDepth(const Position& pos) {
     if (pos.ply > stats.seldepth) {
         stats.seldepth = pos.ply;
     }
+}
+
+void Search::stop() {
+    stopSearch = true;
 }
 
 void Search::startTimer(int movetimeMs) {
