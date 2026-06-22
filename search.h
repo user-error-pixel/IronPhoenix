@@ -10,6 +10,44 @@ constexpr int MAX_PLY = 128;
 constexpr int MAX_SEARCH_PLY = 128;
 constexpr int KILLER_SLOTS = 2;
 
+constexpr Score MATE_FOUND_THRESHOLD = MATE_SCORE - MAX_PLY;
+
+inline bool isMateScore(Score score) {
+    return score >= MATE_FOUND_THRESHOLD || score <= -MATE_FOUND_THRESHOLD;
+}
+
+inline int mateDistancePly(Score score) {
+    if (score > 0) {
+        return MATE_SCORE - score;
+    }
+
+    return MATE_SCORE + score;
+}
+
+inline int mateDistanceMoves(Score score) {
+    int plies = std::abs(mateDistancePly(score));
+
+    return (plies + 1) / 4;
+}
+
+inline int signedMateDistanceMoves(Score score) {
+    int moves = mateDistanceMoves(score);
+
+    if (score < 0) {
+        return -moves;
+    }
+
+    return moves;
+}
+
+inline bool isWinningMateScore(Score score) {
+    return score >= MATE_FOUND_THRESHOLD;
+}
+
+inline bool isLosingMateScore(Score score) {
+    return score <= -MATE_FOUND_THRESHOLD;
+}
+
 struct PVLine {
     Move moves[MAX_PLY];
     int length = 0;

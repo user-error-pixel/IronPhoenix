@@ -581,14 +581,27 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
             static_cast<uint64_t>(elapsedSeconds * 1000.0);
 
         std::cout << "info depth " << depth
-            << " seldepth " << stats.seldepth
-            << " score cp " << bestScore
+            << " seldepth " << stats.seldepth;
+
+        if (isMateScore(bestScore)) {
+            std::cout << " score cp mate " << signedMateDistanceMoves(bestScore);
+        }
+        else {
+            std::cout << " score cp " << bestScore;
+        }
+
+        std::cout
             << " nodes " << stats.nodes
             << " qnodes " << stats.qnodes
             << " time " << timeMs
             << " nps " << nps
             << " pv " << pvToString(bestPv)
             << "\n";
+
+        if (isMateScore(bestScore)) {
+            stopSearch = true;
+            break;
+        }
     }
 
     rootBestMove = bestMove;
