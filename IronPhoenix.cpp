@@ -324,12 +324,16 @@ void handlePosition(Position& pos, Parser& parser, const std::string& line) {
             movesText = fenAndMaybeMoves.substr(movesPos + movesToken.size());
         }
 
-        if (!parser.parseFen(pos, fenText)) {
+        Position tempPos;
+
+        if (!parser.parseFen(tempPos, fenText)) {
             std::cout << "info string failed to parse fen\n";
             return;
         }
 
-        pos.key = computeZobristKey(pos);
+        tempPos.key = computeZobristKey(tempPos);
+
+        pos = tempPos;
 
         if (!movesText.empty()) {
             std::istringstream moveStream(movesText);
@@ -595,6 +599,10 @@ int main()
             Position searchPos = pos;
 
             searching = true;
+
+            if (searchThread.joinable()) {
+                searchThread.join();
+            }
 
             searchThread = std::thread([&, searchPos, depth, movetimeMs]() mutable {
                 Move bestMove = search->findBestMove(searchPos, depth, movetimeMs);
