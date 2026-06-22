@@ -6,6 +6,8 @@
 #include <cctype>
 #include "main.h"
 #include "preft.h"
+#include "tt.h"
+#include "search.h"
 
 std::string squareToString(int sq) {
     if (sq < 0 || sq >= BOARD_SIZE) {
@@ -304,6 +306,8 @@ void handlePosition(Position& pos, const std::string& line) {
 
 int main()
 {
+    initZobrist();
+
     Position pos;
 
     initBoardValidity(pos);
@@ -313,6 +317,11 @@ int main()
     initPawnInfo();
     initKnightInfo(pos);
     initKingInfo(pos);
+
+    TranspositionTable TT;
+    TT.resizeMB(64);
+
+    Search search(TT);
 
     std::string line;
 
@@ -337,7 +346,7 @@ int main()
             std::string token;
             int depth = 3;
 
-            iss >> token;
+            iss >> token; // go
 
             while (iss >> token) {
                 if (token == "depth") {
@@ -345,7 +354,14 @@ int main()
                 }
             }
 
-			// Call the search function to find the best move for the current position and depth.
+            Move bestMove = search.findBestMove(pos, depth);
+
+            if (bestMove.from == 0 && bestMove.to == 0) {
+                std::cout << "bestmove 0000\n";
+            }
+            else {
+                std::cout << "bestmove " << moveToUci(bestMove) << "\n";
+            }
         }
         else if (line.rfind("perft", 0) == 0) {
             std::istringstream iss(line);

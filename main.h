@@ -23,6 +23,11 @@ constexpr Score MATE_SCORE = 29000000;
 constexpr int BOARD_WIDTH = 16;
 constexpr int BOARD_RANKS = 14;
 
+extern uint64_t zobristPiece[5][7][BOARD_SIZE];
+extern uint64_t zobristTurn[5];
+
+void initZobrist();
+
 extern int knightMoveCount[BOARD_SIZE];
 extern int knightMoves[BOARD_SIZE][8];
 
@@ -195,7 +200,11 @@ struct Position {
     }
 };
 
+uint64_t computeZobristKey(const Position& pos);
+
 inline void addPiece(Position& pos, int sq, int piece, int color) {
+    pos.key ^= zobristPiece[color][piece][sq];
+
     pos.board[sq] = piece;
     pos.color[sq] = color;
 
@@ -209,7 +218,10 @@ inline void addPiece(Position& pos, int sq, int piece, int color) {
 }
 
 inline void removePiece(Position& pos, int sq) {
+    int piece = pos.board[sq];
     int color = pos.color[sq];
+
+    pos.key ^= zobristPiece[color][piece][sq];
 
     int index = pos.pieceIndex[sq];
     int lastIndex = --pos.pieceCount[color];
@@ -226,6 +238,9 @@ inline void removePiece(Position& pos, int sq) {
 inline void movePiece(Position& pos, int from, int to) {
     int piece = pos.board[from];
     int color = pos.color[from];
+
+    pos.key ^= zobristPiece[color][piece][from];
+    pos.key ^= zobristPiece[color][piece][to];
 
     int index = pos.pieceIndex[from];
 
@@ -259,6 +274,8 @@ struct History {
     int oldKingSq;
     int oldHalfmoveClock;
     int oldTurn;
+
+    uint64_t oldKey;
 };
 
 inline History doMove(Position& pos, const Move& m) {
@@ -280,6 +297,8 @@ inline History doMove(Position& pos, const Move& m) {
     h.oldHalfmoveClock = pos.halfmoveClock;
     h.oldTurn = pos.turn;
 
+    pos.key ^= zobristTurn[pos.turn];
+
     if (h.captured != EMPTY) {
         removePiece(pos, m.to);
     }
@@ -294,6 +313,8 @@ inline History doMove(Position& pos, const Move& m) {
     if (pos.turn > GREEN) {
         pos.turn = RED;
     }
+
+    pos.key ^= zobristTurn[pos.turn];
 
     pos.ply++;
 
@@ -313,6 +334,8 @@ inline void undoMove(Position& pos, const Move& m, const History& h) {
     if (h.captured != EMPTY) {
         addPiece(pos, m.to, h.captured, h.capturedColor);
     }
+
+    pos.key = h.oldKey;
 }
 
 constexpr int baseMailbox[BOARD_SIZE] = {
@@ -784,23 +807,182 @@ constexpr int pieceValue[7] = {
     200000
 };
 
-inline Score lazyEvaluate(const Position& pos, int povColor) {
-    int povTeam = teamOfColor(povColor);
+constexpr int mobilityValue[7] = {
+    0,
+    1,
+    4,
+    3,
+    2,
+    1,
+    0
+};
 
-    Score score = 0;
+inline bool mobilityTargetAllowed(const Position& pos, int fromColor, int to) {
+    if (!pos.isValidSquare(to)) {
+        return false;
+    }
 
-    for (int color = RED; color <= GREEN; ++color) {
-        int sign = teamOfColor(color) == povTeam ? 1 : -1;
+    int targetPiece = pos.board[to];
 
-        int count = pos.pieceCount[color];
+    if (targetPiece == EMPTY) {
+        return true;
+    }
 
-        for (int i = 0; i < count; ++i) {
-            int sq = pos.pieceList[color][i];
-            int piece = pos.board[sq];
+    int targetColor = pos.color[to];
 
-            score += sign * pieceValue[piece];
+    return !sameTeam(fromColor, targetColor);
+}
+
+inline int countPawnMobility(const Position& pos, int from, int color) {
+    const PawnMoveInfo& p = pawnInfo[color];
+
+    int mobility = 0;
+
+    int one = from + p.forward;
+    if (pos.isValidSquare(one) && pos.board[one] == EMPTY) {
+        mobility++;
+    }
+
+    int cap1 = from + p.capLeft;
+    int cap2 = from + p.capRight;
+
+    if (pos.isValidSquare(cap1) &&
+        pos.board[cap1] != EMPTY &&
+        !sameTeam(color, pos.color[cap1])) {
+        mobility++;
+    }
+
+    if (pos.isValidSquare(cap2) &&
+        pos.board[cap2] != EMPTY &&
+        !sameTeam(color, pos.color[cap2])) {
+        mobility++;
+    }
+
+    return mobility;
+}
+
+inline int countKnightMobility(const Position& pos, int from, int color) {
+    int mobility = 0;
+
+    for (int i = 0; i < knightMoveCount[from]; ++i) {
+        int to = knightMoves[from][i];
+
+        if (mobilityTargetAllowed(pos, color, to)) {
+            mobility++;
         }
     }
+
+    return mobility;
+}
+
+inline int countKingMobility(const Position& pos, int from, int color) {
+    int mobility = 0;
+
+    for (int i = 0; i < kingMoveCount[from]; ++i) {
+        int to = kingMoves[from][i];
+
+        if (mobilityTargetAllowed(pos, color, to)) {
+            mobility++;
+        }
+    }
+
+    return mobility;
+}
+
+inline int countSliderMobility(
+    const Position& pos,
+    int from,
+    int color,
+    const int* dirs,
+    int dirCount
+) {
+    int mobility = 0;
+
+    for (int i = 0; i < dirCount; ++i) {
+        int dir = dirs[i];
+        int sq = from + dir;
+
+        while (pos.isValidSquare(sq)) {
+            int targetPiece = pos.board[sq];
+
+            if (targetPiece == EMPTY) {
+                mobility++;
+                sq += dir;
+                continue;
+            }
+
+            int targetColor = pos.color[sq];
+
+            if (!sameTeam(color, targetColor)) {
+                mobility++;
+            }
+
+            break;
+        }
+    }
+
+    return mobility;
+}
+
+inline int countPieceMobility(const Position& pos, int sq, int piece, int color) {
+    switch (piece) {
+    case PAWN:
+        return countPawnMobility(pos, sq, color);
+
+    case KNIGHT:
+        return countKnightMobility(pos, sq, color);
+
+    case BISHOP:
+        return countSliderMobility(pos, sq, color, bishopDirs, 4);
+
+    case ROOK:
+        return countSliderMobility(pos, sq, color, rookDirs, 4);
+
+    case QUEEN:
+        return countSliderMobility(pos, sq, color, queenDirs, 8);
+
+    case KING:
+        return countKingMobility(pos, sq, color);
+
+    default:
+        return 0;
+    }
+}
+
+inline Score lazyEvaluate(const Position& pos, int povColor) {
+    const int povTeam = teamOfColor(povColor);
+
+    Score materialScore = 0;
+    Score mobilityScore = 0;
+
+    int teamMobility[3] = { 0, 0, 0 };
+
+    for (int color = RED; color <= GREEN; ++color) {
+        const int team = teamOfColor(color);
+        const int sign = team == povTeam ? 1 : -1;
+
+        const int count = pos.pieceCount[color];
+
+        for (int i = 0; i < count; ++i) {
+            const int sq = pos.pieceList[color][i];
+            const int piece = pos.board[sq];
+
+            materialScore += sign * pieceValue[piece];
+
+            const int mob = countPieceMobility(pos, sq, piece, color);
+            const int mobValue = mobilityValue[piece];
+
+            mobilityScore += sign * mob * mobValue;
+            teamMobility[team] += mob;
+        }
+    }
+
+    const int enemyTeam = povTeam == TEAM_RY ? TEAM_BG : TEAM_RY;
+    const int teamMobilityDiff = teamMobility[povTeam] - teamMobility[enemyTeam];
+
+    Score score = materialScore;
+    score += mobilityScore;
+    score += teamMobilityDiff;
 
     return score;
 }
