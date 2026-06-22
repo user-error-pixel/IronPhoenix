@@ -209,13 +209,13 @@ void TranspositionTable::store(
 
     replace->key16 = k16;
     replace->score = static_cast<int16_t>(std::clamp(score, -32760, 32760));
-    replace->eval = static_cast<int16_t>(std::clamp(eval, -32760, 32760));
-    replace->depth = static_cast<int8_t>(std::clamp(static_cast<int>(depth), -128, 127));
+    replace->eval  = static_cast<int16_t>(std::clamp(eval, -32760, 32760));
+    replace->depth = static_cast<int8_t> (std::clamp(static_cast<int>(depth), -128, 127));
     replace->flags = packedFlags;
-    replace->age = currentAge;
+    replace->age  = currentAge;
 
-    replace->moveFrom = static_cast<uint8_t>(bestMove.from);
-    replace->moveTo = static_cast<uint8_t>(bestMove.to);
+    replace->moveFrom  = static_cast<uint8_t>(bestMove.from);
+    replace->moveTo    = static_cast<uint8_t>(bestMove.to);
     replace->movePromo = static_cast<uint8_t>(bestMove.promotion);
     replace->moveFlags = static_cast<uint8_t>(bestMove.flag);
 }
