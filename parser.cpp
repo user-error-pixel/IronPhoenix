@@ -157,7 +157,6 @@ int Parser::squareFromString(const std::string& sqText) const {
     return sq;
 }
 
-
 bool Parser::parseFen(Position& pos, const std::string& fen) {
     pos.clear();
     initBoardValidity(pos);
@@ -210,10 +209,8 @@ bool Parser::parseFen(Position& pos, const std::string& fen) {
     if (boardPartIndex == 7) {
         const std::string& epToken = parts[6];
 
-        // Skip for now, but this confirms it was detected.
-        // Example: {'enPassant':('','','g12:g11','')}
         if (epToken.find("enPassant") != std::string::npos) {
-            // 
+            parseEnPassant(pos, epToken);
         }
     }
 
@@ -230,8 +227,6 @@ bool Parser::parseBoard(Position& pos, const std::string& boardToken) const {
     std::stringstream rankStream(boardToken);
     std::string rankData;
 
-    // This matches your old parser:
-    // int initialStartPointer = 1;
     int sq = 1;
 
     int row = 0;
@@ -356,6 +351,57 @@ bool Parser::getSquares(int& from, int& to, const std::string& uciMove) const {
     to = squareFromString(toText);
 
     return from != -1 && to != -1;
+}
+
+bool Parser::parseEnPassant(Position& pos, const std::string& epToken) const {
+    clearEnPassant(pos);
+
+    if (epToken.find("enPassant") == std::string::npos) {
+        return true;
+    }
+
+    int color = RED;
+    size_t i = 0;
+
+    while (color <= GREEN) {
+        size_t start = epToken.find('\'', i);
+
+        if (start == std::string::npos) {
+            break;
+        }
+
+        size_t end = epToken.find('\'', start + 1);
+
+        if (end == std::string::npos) {
+            break;
+        }
+
+        std::string entry = epToken.substr(start + 1, end - start - 1);
+
+        if (entry == "enPassant") {
+            i = end + 1;
+            continue;
+        }
+
+        if (!entry.empty()) {
+            size_t colon = entry.find(':');
+
+            if (colon != std::string::npos) {
+                std::string pawnSqText = entry.substr(0, colon);
+
+                int pawnSq = squareFromString(pawnSqText);
+
+                if (pawnSq != -1) {
+                    pos.enPassantSq[color] = pawnSq;
+                }
+            }
+        }
+
+        color++;
+        i = end + 1;
+    }
+
+    return true;
 }
 
 std::vector<std::string> Parser::splitDashFen(const std::string& fen) {

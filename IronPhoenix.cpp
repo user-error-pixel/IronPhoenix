@@ -337,6 +337,165 @@ void handlePosition(Position& pos, Parser& parser, const std::string& line) {
     std::cout << "info string unsupported position command\n";
 }
 
+const char* moveFlagName(const Move& m) {
+    if (m.flag == QUIET) {
+        return "QUIET";
+    }
+
+    if (m.flag & EP_CAPTURE) {
+        return "EP_CAPTURE";
+    }
+
+    if (m.flag & PROMOTION_CAPTURE) {
+        return "PROMOTION_CAPTURE";
+    }
+
+    if (m.flag & PROMOTION) {
+        return "PROMOTION";
+    }
+
+    if (m.flag & CAPTURE) {
+        return "CAPTURE";
+    }
+
+    if (m.flag & CASTLE) {
+        return "CASTLE";
+    }
+
+    return "UNKNOWN";
+}
+
+const char* pieceNameShort(int piece) {
+    switch (piece) {
+    case EMPTY:  return ".";
+    case PAWN:   return "P";
+    case KNIGHT: return "N";
+    case BISHOP: return "B";
+    case ROOK:   return "R";
+    case QUEEN:  return "Q";
+    case KING:   return "K";
+    default:     return "?";
+    }
+}
+
+const char* colorNameShort(int color) {
+    switch (color) {
+    case RED:    return "R";
+    case BLUE:   return "B";
+    case YELLOW: return "Y";
+    case GREEN:  return "G";
+    default:     return ".";
+    }
+}
+
+void printAvailableMoves(Position& pos) {
+    MoveList legal;
+    generateLegalMoves(pos, legal, pos.turn);
+
+    std::cout << "\nAvailable legal moves for "
+        << colorNameShort(pos.turn)
+        << " (" << legal.count << " moves)\n";
+
+    std::cout << "------------------------------------------------------------\n";
+    std::cout << "#   move      piece  from   to     flag\n";
+    std::cout << "------------------------------------------------------------\n";
+
+    for (int i = 0; i < legal.count; ++i) {
+        const Move& m = legal[i];
+
+        std::cout << i + 1;
+
+        if (i + 1 < 10) {
+            std::cout << "   ";
+        }
+        else if (i + 1 < 100) {
+            std::cout << "  ";
+        }
+        else {
+            std::cout << " ";
+        }
+
+        std::cout << moveToUci(m);
+
+        if (moveToUci(m).size() < 8) {
+            for (size_t p = moveToUci(m).size(); p < 8; ++p) {
+                std::cout << " ";
+            }
+        }
+
+        std::cout << colorNameShort(m.movedColor)
+            << pieceNameShort(m.moved)
+            << "     ";
+
+        std::cout << squareToString(m.from) << "   ";
+
+        if (squareToString(m.from).size() < 3) {
+            std::cout << " ";
+        }
+
+        std::cout << squareToString(m.to) << "   ";
+
+        if (squareToString(m.to).size() < 3) {
+            std::cout << " ";
+        }
+
+        std::cout << moveFlagName(m);
+
+        if (m.isCapture()) {
+            std::cout << " captures "
+                << colorNameShort(m.capturedColor)
+                << pieceNameShort(m.captured);
+        }
+
+        if (m.isPromotion()) {
+            std::cout << " promotes "
+                << pieceNameShort(m.promotion);
+        }
+
+        std::cout << "\n";
+    }
+
+    std::cout << "------------------------------------------------------------\n\n";
+}
+
+void printPseudoMoves(Position& pos) {
+    MoveList pseudo;
+    generateMoves(pos, pseudo, pos.turn);
+
+    std::cout << "\nPseudo moves for "
+        << colorNameShort(pos.turn)
+        << " (" << pseudo.count << " moves)\n";
+
+    std::cout << "------------------------------------------------------------\n";
+
+    for (int i = 0; i < pseudo.count; ++i) {
+        const Move& m = pseudo[i];
+
+        std::cout << i + 1 << ". "
+            << moveToUci(m)
+            << " "
+            << colorNameShort(m.movedColor)
+            << pieceNameShort(m.moved)
+            << " "
+            << moveFlagName(m);
+
+        if (m.isCapture()) {
+            std::cout << " captures "
+                << colorNameShort(m.capturedColor)
+                << pieceNameShort(m.captured);
+        }
+
+        if (m.isPromotion()) {
+            std::cout << " promotes "
+                << pieceNameShort(m.promotion);
+        }
+
+        std::cout << "\n";
+    }
+
+    std::cout << "------------------------------------------------------------\n\n";
+}
+
 int main()
 {
     Parser parser;
@@ -439,6 +598,12 @@ int main()
         }
         else if (line == "d") {
             printBoard(pos);
+        }
+        else if (line == "moves") {
+            printAvailableMoves(pos);
+        }
+        else if (line == "pseudomoves") {
+            printPseudoMoves(pos);
         }
         else if (line == "quit") {
             break;

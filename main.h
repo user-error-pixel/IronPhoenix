@@ -182,6 +182,8 @@ struct Position {
 
     int pieceIndex[BOARD_SIZE];
 
+    int enPassantSq[5];
+
     int kingSq[5];
 
     int turn;
@@ -201,6 +203,7 @@ struct Position {
         std::memset(pieceCount, 0, sizeof(pieceCount));
         std::memset(pieceIndex, -1, sizeof(pieceIndex));
         std::memset(kingSq, 0, sizeof(kingSq));
+        std::memset(enPassantSq, -1, sizeof(enPassantSq));
 
         turn = RED;
         halfmoveClock = 0;
@@ -279,6 +282,18 @@ inline void movePiece(Position& pos, int from, int to) {
     }
 }
 
+struct PawnMoveInfo {
+    int forward;
+    int capLeft;
+    int capRight;
+};
+
+extern PawnMoveInfo pawnInfo[5];
+
+void initPawnInfo();
+void initKnightInfo(const Position& pos);
+void initKingInfo(const Position& pos);
+
 struct History {
     int from;
     int to;
@@ -295,6 +310,8 @@ struct History {
     int oldKingSq;
     int oldHalfmoveClock;
     int oldTurn;
+
+    int oldEnPassantSq[5];
 
     uint64_t oldKey;
 };
@@ -319,15 +336,32 @@ inline History doMove(Position& pos, const Move& m) {
     h.oldTurn = pos.turn;
     h.oldKey = pos.key;
 
+    std::memcpy(h.oldEnPassantSq, pos.enPassantSq, sizeof(pos.enPassantSq));
+
     pos.key ^= zobristTurn[pos.turn];
 
-    if (h.captured != EMPTY) {
+    pos.enPassantSq[m.movedColor] = -1;
+
+    if (m.flag & EP_CAPTURE) {
+        const int capSq = m.from + pawnInfo[m.movedColor].forward;
+
+        h.captured = pos.board[capSq];
+        h.capturedColor = pos.color[capSq];
+
+        if (h.captured != EMPTY) {
+            removePiece(pos, capSq);
+        }
+    }
+    else if (h.captured != EMPTY) {
         removePiece(pos, m.to);
     }
 
     movePiece(pos, m.from, m.to);
 
     if (m.isPromotion()) {
+        pos.key ^= zobristPiece[m.movedColor][PAWN][m.to];
+        pos.key ^= zobristPiece[m.movedColor][m.promotion][m.to];
+
         pos.board[m.to] = m.promotion;
     }
 
@@ -349,15 +383,46 @@ inline void undoMove(Position& pos, const Move& m, const History& h) {
     pos.kingSq[h.movedColor] = h.oldKingSq;
     pos.ply--;
 
+    std::memcpy(pos.enPassantSq, h.oldEnPassantSq, sizeof(pos.enPassantSq));
+
     pos.board[m.to] = h.moved;
 
     movePiece(pos, m.to, m.from);
 
     if (h.captured != EMPTY) {
-        addPiece(pos, m.to, h.captured, h.capturedColor);
+        if (h.flag & EP_CAPTURE) {
+            const int capSq = h.from + pawnInfo[h.movedColor].forward;
+            addPiece(pos, capSq, h.captured, h.capturedColor);
+        }
+        else {
+            addPiece(pos, h.to, h.captured, h.capturedColor);
+        }
     }
 
     pos.key = h.oldKey;
+}
+
+inline bool anyEnemyEpSquare(const Position& pos, int color, int dest, int& capturedColorOut) {
+    capturedColorOut = NO_COLOR;
+
+    for (int enemy = RED; enemy <= GREEN; ++enemy) {
+        if (!enemyColor(color, enemy)) {
+            continue;
+        }
+
+        if (pos.enPassantSq[enemy] == dest) {
+            capturedColorOut = enemy;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline void clearEnPassant(Position& pos) {
+    for (int color = RED; color <= GREEN; ++color) {
+        pos.enPassantSq[color] = -1;
+    }
 }
 
 constexpr int baseMailbox[BOARD_SIZE] = {
@@ -538,18 +603,6 @@ inline void generateSliderMoves(
     }
 }
 
-struct PawnMoveInfo {
-    int forward;
-    int capLeft;
-    int capRight;
-};
-
-extern PawnMoveInfo pawnInfo[5];
-
-void initPawnInfo();
-void initKnightInfo(const Position& pos);
-void initKingInfo(const Position& pos);
-
 inline bool isPromotionSquare(int color, int sq) {
     if (sq < 0 || sq >= BOARD_SIZE) {
         return false;
@@ -642,7 +695,29 @@ inline void generatePawnMoves(
         }
 
         int targetPiece = pos.board[to];
+
         if (targetPiece == EMPTY) {
+            int epCapturedColor = NO_COLOR;
+
+            if (anyEnemyEpSquare(pos, color, to, epCapturedColor)) {
+                const int capSq = from + p.forward;
+
+                if (pos.isValidSquare(capSq) &&
+                    pos.board[capSq] == PAWN &&
+                    pos.color[capSq] == epCapturedColor) {
+                    list.push(Move(
+                        from,
+                        to,
+                        PAWN,
+                        PAWN,
+                        EMPTY,
+                        EP_CAPTURE,
+                        color,
+                        epCapturedColor
+                    ));
+                }
+            }
+
             continue;
         }
 
