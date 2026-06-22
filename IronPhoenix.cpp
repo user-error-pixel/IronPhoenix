@@ -509,6 +509,41 @@ void printPseudoMoves(Position& pos) {
     std::cout << "------------------------------------------------------------\n\n";
 }
 
+const char* teamName(int team) {
+    switch (team) {
+    case TEAM_RY:
+        return "RY";
+    case TEAM_BG:
+        return "BG";
+    default:
+        return "NO_TEAM";
+    }
+}
+
+int enemyTeamOfColor(int color) {
+    return teamOfColor(color) == TEAM_RY ? TEAM_BG : TEAM_RY;
+}
+
+bool printTerminalInfoIfNeeded(Position& pos) {
+    MoveList legal;
+    generateLegalMoves(pos, legal, pos.turn);
+
+    if (legal.count > 0) {
+        return false;
+    }
+
+    if (inCheck(pos, pos.turn)) {
+        const int winnerTeam = enemyTeamOfColor(pos.turn);
+
+        std::cout << "info string " << teamName(winnerTeam) << " won\n";
+    }
+    else {
+        std::cout << "info string Stalemate\n";
+    }
+
+    return true;
+}
+
 int main()
 {
     std::cout.setf(std::ios::unitbuf);
@@ -594,6 +629,10 @@ int main()
                 else if (token == "movetime") {
                     iss >> movetimeMs;
                 }
+            }
+
+            if (printTerminalInfoIfNeeded(pos)) {
+                continue;
             }
 
             Position searchPos = pos;

@@ -1,16 +1,49 @@
 #include <algorithm>
 #include <iostream>
 #include <chrono>
+#include <cmath>
 #include "search.h"
 #include "preft.h"
 
 std::atomic<bool> stopSearch = false;
+
+SearchStack stack[MAX_PLY + 8];
+
+int lmrReductions[MAX_LMR_DEPTH][MAX_LMR_MOVES + 1];
 
 Search::Search(TranspositionTable& table)
     : tt(table),
     rootBestMove() {
     clearKillers();
     clearHistory();
+    initLmrReductions();
+}
+
+void initLmrReductions() {
+    for (int depth = 0; depth < MAX_LMR_DEPTH; ++depth) {
+        for (int movesSearched = 0; movesSearched <= MAX_LMR_MOVES; ++movesSearched) {
+            int reduction = 0;
+
+            if (depth >= 3 && movesSearched >= 4) {
+                const double value =
+                    0.99 +
+                    (std::log(static_cast<double>(depth)) *
+                     std::log(static_cast<double>(movesSearched))) / 3.14;
+
+                reduction = static_cast<int>(value);
+
+                if (reduction > depth - 1) {
+                    reduction = depth - 1;
+                }
+
+                if (reduction < 0) {
+                    reduction = 0;
+                }
+            }
+
+            lmrReductions[depth][movesSearched] = reduction;
+        }
+    }
 }
 
 bool Search::sameMove(const Move& a, const Move& b) const {
@@ -149,6 +182,40 @@ bool Search::isKillerMove(int ply, const Move& move) const {
 
     return sameMove(killerMoves[ply][0], move)
         || sameMove(killerMoves[ply][1], move);
+}
+
+Depth Search::lmrReduction(
+    const SearchStack* ss,
+    Depth depth,
+    int moveCount,
+    bool isPv,
+    const Move& move
+) const {
+    if (depth < 3) {
+        return 0;
+    }
+
+    if (moveCount < 4) {
+        return 0;
+    }
+
+    if (!move.isQuiet()) {
+        return 0;
+    }
+
+    if (ss->inCheck) {
+        return 0;
+    }
+
+    if (move.flag & CASTLE) {
+        return 0;
+    }
+
+    Depth reduction = getBaseLmrReduction(depth, moveCount);
+
+    reduction = std::clamp<Depth>(reduction, 0, depth - 1);
+
+    return reduction;
 }
 
 void Search::updateSelDepth(const Position& pos) {
@@ -328,6 +395,7 @@ Score Search::qsearch(
 
 Score Search::negamax(
     Position& pos,
+    SearchStack* ss,
     Depth depth,
     Score alpha,
     Score beta,
@@ -363,6 +431,29 @@ Score Search::negamax(
         return ttScore;
     }
 
+    ss->ply = pos.ply;
+    ss->moveCount = 0;
+    ss->currentMove = Move();
+    ss->ttPv = false;
+    ss->inCheck = inCheck(pos, pos.turn);
+    ss->staticEval = lazyEvaluate(pos, pos.turn);
+
+    if (ss > stack) {
+        ss->previousStaticEval = (ss - 1)->staticEval;
+    }
+    else {
+        ss->previousStaticEval = ss->staticEval;
+    }
+
+    if (ss >= stack + 2) {
+        ss->improving = ss->staticEval > (ss - 2)->staticEval;
+    }
+    else {
+        ss->improving = false;
+    }
+
+    ss->ttPv = ttPv;
+
     MoveList moves;
     generateLegalMoves(pos, moves, pos.turn);
 
@@ -382,18 +473,64 @@ Score Search::negamax(
 
         const Move& move = moves[i];
 
+        ss->moveCount = i + 1;
+        ss->currentMove = moves[i];
+
         PVLine childPv;
 
         History h = doMove(pos, move);
 
-        Score score = -negamax(
-            pos,
-            depth - 1,
-            -beta,
-            -alpha,
-            isPv && i == 0,
-            childPv
+        const Depth newDepth = depth - 1;
+
+        const Depth reduction = lmrReduction(
+            ss,
+            depth,
+            ss->moveCount,
+            isPv,
+            move
         );
+
+        Score score;
+
+        if (reduction > 0) {
+            const Depth reducedDepth = std::max<Depth>(0, newDepth - reduction);
+
+            score = -negamax(
+                pos,
+                ss + 1,
+                reducedDepth,
+                -alpha - 1,
+                -alpha,
+                false,
+                childPv
+            );
+
+            if (!stopSearch && score > alpha) {
+
+                childPv.clear();
+
+                score = -negamax(
+                    pos,
+                    ss + 1,
+                    newDepth,
+                    -beta,
+                    -alpha,
+                    isPv && i == 0,
+                    childPv
+                );
+            }
+        }
+        else {
+            score = -negamax(
+                pos,
+                ss + 1,
+                newDepth,
+                -beta,
+                -alpha,
+                isPv && i == 0,
+                childPv
+            );
+        }
 
         undoMove(pos, move, h);
 
@@ -434,6 +571,10 @@ Score Search::negamax(
         }
     }
 
+    if (stopSearch) {
+        return bestScore;
+    }
+
     TTBound bound = TT_EXACT;
 
     if (bestScore <= oldAlpha) {
@@ -443,16 +584,14 @@ Score Search::negamax(
         bound = TT_LOWER;
     }
 
-    Score eval = lazyEvaluate(pos, pos.turn);
-
     tt.store(
         pos,
         depth,
         bestScore,
-        eval,
+        ss->staticEval,
         bound,
         bestMove,
-        isPv
+        isPv || ss->ttPv
     );
 
     return bestScore;
@@ -500,6 +639,16 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
         PVLine rootPv;
         rootPv.clear();
 
+        for (int i = 0; i < MAX_PLY + 8; ++i) {
+            stack[i].clear();
+        }
+
+        SearchStack* ss = stack;
+        ss->clear();
+        ss->ply = pos.ply;
+        ss->staticEval = lazyEvaluate(pos, pos.turn);
+        ss->inCheck = inCheck(pos, pos.turn);
+
         for (int i = 0; i < moves.count; ++i) {
             if (stopSearch) {
                 break;
@@ -507,12 +656,16 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
 
             const Move& move = moves[i];
 
+            ss->moveCount = i + 1;
+            ss->currentMove = move;
+
             PVLine childPv;
 
             History h = doMove(pos, move);
 
             Score score = -negamax(
                 pos,
+                ss + 1,
                 depth - 1,
                 -beta,
                 -alpha,

@@ -10,7 +10,12 @@ constexpr int MAX_PLY = 128;
 constexpr int MAX_SEARCH_PLY = 128;
 constexpr int KILLER_SLOTS = 2;
 
+constexpr int MAX_LMR_DEPTH = MAX_PLY + 8;
+constexpr int MAX_LMR_MOVES = MAX_MOVES;
+
 constexpr Score MATE_FOUND_THRESHOLD = MATE_SCORE - MAX_PLY;
+
+extern int lmrReductions[MAX_LMR_DEPTH][MAX_LMR_MOVES + 1];
 
 inline bool isMateScore(Score score) {
     return score >= MATE_FOUND_THRESHOLD || score <= -MATE_FOUND_THRESHOLD;
@@ -48,6 +53,60 @@ inline bool isLosingMateScore(Score score) {
     return score <= -MATE_FOUND_THRESHOLD;
 }
 
+void initLmrReductions();
+
+inline Depth getBaseLmrReduction(Depth depth, int movesSearched) {
+    if (depth < 0) {
+        depth = 0;
+    }
+
+    if (depth >= MAX_LMR_DEPTH) {
+        depth = MAX_LMR_DEPTH - 1;
+    }
+
+    if (movesSearched < 0) {
+        movesSearched = 0;
+    }
+
+    if (movesSearched > MAX_LMR_MOVES) {
+        movesSearched = MAX_LMR_MOVES;
+    }
+
+    return lmrReductions[depth][movesSearched];
+}
+
+struct SearchStack {
+    Move currentMove;
+    Move excludedMove;
+
+    Score staticEval = 0;
+    Score previousStaticEval = 0;
+
+    bool inCheck = false;
+    bool improving = false;
+    bool ttPv = false;
+    bool nullMove = true;
+
+    int ply = 0;
+    int moveCount = 0;
+
+    void clear() {
+        currentMove = Move();
+        excludedMove = Move();
+
+        staticEval = 0;
+        previousStaticEval = 0;
+
+        inCheck = false;
+        improving = false;
+        ttPv = false;
+        nullMove = true;
+
+        ply = 0;
+        moveCount = 0;
+    }
+};
+
 struct PVLine {
     Move moves[MAX_PLY];
     int length = 0;
@@ -82,6 +141,7 @@ public:
 
     Score negamax(
         Position& pos,
+        SearchStack* ss,
         Depth depth,
         Score alpha,
         Score beta,
@@ -125,6 +185,14 @@ private:
     void storeKiller(int ply, const Move& move);
 
     bool isKillerMove(int ply, const Move& move) const;
+
+    Depth lmrReduction(
+        const SearchStack* ss,
+        Depth depth,
+        int moveCount,
+        bool isPv,
+        const Move& move
+    ) const;
 
     bool stopSearch = false;
     bool useTimeLimit = false;
