@@ -6,6 +6,7 @@
 #include <limits>
 #include <cctype>
 #include "main.h"
+#include "parser.h"
 #include "preft.h"
 #include "tt.h"
 #include "search.h"
@@ -281,32 +282,65 @@ void applyMoves(Position& pos, std::istringstream& iss) {
     }
 }
 
-void handlePosition(Position& pos, const std::string& line) {
-    std::istringstream iss(line);
+void handlePosition(Position& pos, Parser& parser, const std::string& line) {
+    const std::string startposPrefix = "position startpos";
+    const std::string fenPrefix = "position fen ";
 
-    std::string token;
-    iss >> token; // position
-
-    std::string type;
-    iss >> type;
-
-    if (type == "startpos") {
+    if (line.rfind(startposPrefix, 0) == 0) {
         initStartPosition(pos);
 
-        std::string next;
-        if (iss >> next) {
-            if (next == "moves") {
-                applyMoves(pos, iss);
-            }
+        const std::string movesToken = " moves ";
+        size_t movesPos = line.find(movesToken);
+
+        if (movesPos != std::string::npos) {
+            std::string movesText = line.substr(movesPos + movesToken.size());
+            std::istringstream moveStream(movesText);
+            applyMoves(pos, moveStream);
         }
+
+        pos.key = computeZobristKey(pos);
+        return;
     }
-    else {
-        std::cout << "info string only position startpos is supported right now\n";
+
+    if (line.rfind(fenPrefix, 0) == 0) {
+        std::string fenAndMaybeMoves = line.substr(fenPrefix.size());
+
+        const std::string movesToken = " moves ";
+        size_t movesPos = fenAndMaybeMoves.find(movesToken);
+
+        std::string fenText;
+        std::string movesText;
+
+        if (movesPos == std::string::npos) {
+            fenText = fenAndMaybeMoves;
+        }
+        else {
+            fenText = fenAndMaybeMoves.substr(0, movesPos);
+            movesText = fenAndMaybeMoves.substr(movesPos + movesToken.size());
+        }
+
+        if (!parser.parseFen(pos, fenText)) {
+            std::cout << "info string failed to parse fen\n";
+            return;
+        }
+
+        pos.key = computeZobristKey(pos);
+
+        if (!movesText.empty()) {
+            std::istringstream moveStream(movesText);
+            applyMoves(pos, moveStream);
+        }
+
+        return;
     }
+
+    std::cout << "info string unsupported position command\n";
 }
 
 int main()
 {
+    Parser parser;
+
     initZobrist();
 
     Position pos;
@@ -341,7 +375,7 @@ int main()
             initStartPosition(pos);
         }
         else if (line.rfind("position", 0) == 0) {
-            handlePosition(pos, line);
+            handlePosition(pos, parser, line);
         }
         else if (line.rfind("go", 0) == 0) {
             std::istringstream iss(line);
