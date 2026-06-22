@@ -1,5 +1,6 @@
 #include <iostream>
 #include "main.h"
+#include "preft.h"
 
 PawnMoveInfo pawnInfo[5];
 
@@ -173,4 +174,96 @@ void printBoard(const Position& pos) {
     }
 
     std::cout << "\n";
+}
+
+const char* pieceName(int piece) {
+    switch (piece) {
+    case EMPTY:  return "EMPTY";
+    case PAWN:   return "PAWN";
+    case KNIGHT: return "KNIGHT";
+    case BISHOP: return "BISHOP";
+    case ROOK:   return "ROOK";
+    case QUEEN:  return "QUEEN";
+    case KING:   return "KING";
+    case WALL:   return "WALL";
+    default:     return "UNKNOWN";
+    }
+}
+
+const char* colorName(int color) {
+    switch (color) {
+    case NO_COLOR: return "NO_COLOR";
+    case RED:      return "RED";
+    case BLUE:     return "BLUE";
+    case YELLOW:   return "YELLOW";
+    case GREEN:    return "GREEN";
+    default:       return "UNKNOWN";
+    }
+}
+
+std::string flagString(const Move& move) {
+    if (move.flag == QUIET) {
+        return "QUIET";
+    }
+
+    std::string out;
+
+    if (move.flag & CAPTURE) {
+        out += "CAPTURE|";
+    }
+
+    if (move.flag & PROMOTION) {
+        out += "PROMOTION|";
+    }
+
+    if (move.flag & PROMOTION_CAPTURE) {
+        out += "PROMOTION_CAPTURE|";
+    }
+
+    if (move.flag & CASTLE) {
+        out += "CASTLE|";
+    }
+
+    if (move.flag & EP_CAPTURE) {
+        out += "EP_CAPTURE|";
+    }
+
+    if (!out.empty()) {
+        out.pop_back(); // remove last |
+    }
+
+    return out.empty() ? "UNKNOWN_FLAG" : out;
+}
+
+void printMove(const Move& move) {
+    std::cout << moveToUci(move);
+}
+
+void printMoveDetailed(const Move& move) {
+    std::cout << "Move: " << moveToUci(move) << "\n";
+
+    std::cout << "  from: " << move.from << "\n";
+    std::cout << "  to: " << move.to << "\n";
+
+    std::cout << "  moved: " << pieceName(move.moved)
+        << " (" << static_cast<int>(move.moved) << ")\n";
+
+    std::cout << "  movedColor: " << colorName(move.movedColor)
+        << " (" << static_cast<int>(move.movedColor) << ")\n";
+
+    std::cout << "  captured: " << pieceName(move.captured)
+        << " (" << static_cast<int>(move.captured) << ")\n";
+
+    std::cout << "  capturedColor: " << colorName(move.capturedColor)
+        << " (" << static_cast<int>(move.capturedColor) << ")\n";
+
+    std::cout << "  promotion: " << pieceName(move.promotion)
+        << " (" << static_cast<int>(move.promotion) << ")\n";
+
+    std::cout << "  flag: " << flagString(move)
+        << " (" << static_cast<int>(move.flag) << ")\n";
+
+    std::cout << "  isCapture: " << move.isCapture() << "\n";
+    std::cout << "  isPromotion: " << move.isPromotion() << "\n";
+    std::cout << "  isQuiet: " << move.isQuiet() << "\n";
 }

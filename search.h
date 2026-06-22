@@ -6,6 +6,9 @@
 
 constexpr int MAX_PLY = 128;
 
+constexpr int MAX_SEARCH_PLY = 128;
+constexpr int KILLER_SLOTS = 2;
+
 struct PVLine {
     Move moves[MAX_PLY];
     int length = 0;
@@ -33,7 +36,7 @@ class Search {
 public:
     explicit Search(TranspositionTable& table);
 
-    Move findBestMove(Position& pos, Depth depth);
+    Move findBestMove(Position& pos, Depth maxDepth, int movetimeMs = 0);
 
     Score negamax(
         Position& pos,
@@ -56,6 +59,37 @@ public:
 
 private:
     TranspositionTable& tt;
+
+    int quietHistory[5][BOARD_SIZE][BOARD_SIZE];
+
+    int captureHistory[7][BOARD_SIZE][7];
+
+    void clearHistory();
+
+    void updateQuietHistory(const Move& move, int bonus);
+    void updateCaptureHistory(const Move& move, int bonus);
+
+    int getQuietHistory(const Move& move) const;
+    int getCaptureHistory(const Move& move) const;
+
+    int historyBonus(Depth depth) const;
+
+    Move killerMoves[MAX_SEARCH_PLY][KILLER_SLOTS];
+
+    void clearKillers();
+
+    void storeKiller(int ply, const Move& move);
+
+    bool isKillerMove(int ply, const Move& move) const;
+
+    bool stopSearch = false;
+    bool useTimeLimit = false;
+
+    std::chrono::steady_clock::time_point searchStartTime;
+    int timeLimitMs = 0;
+
+    bool shouldStop();
+    void startTimer(int movetimeMs);
 
     Move rootBestMove;
 

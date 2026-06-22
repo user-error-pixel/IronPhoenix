@@ -92,7 +92,16 @@ struct Move {
     uint8_t movedColor;
     uint8_t capturedColor;
 
-    Move() = default;
+    Move()
+        : from(0),
+        to(0),
+        moved(EMPTY),
+        captured(EMPTY),
+        promotion(EMPTY),
+        flag(QUIET),
+        movedColor(NO_COLOR),
+        capturedColor(NO_COLOR) {
+    }
 
     Move(
         int f,
@@ -114,16 +123,28 @@ struct Move {
         capturedColor(static_cast<uint8_t>(cc)) {
     }
 
+    inline bool isNone() const {
+        return from == 0 && to == 0;
+    }
+
     inline bool isCapture() const {
-        return flag & (CAPTURE | PROMOTION_CAPTURE | EP_CAPTURE);
+        return (flag & (CAPTURE | PROMOTION_CAPTURE | EP_CAPTURE)) != 0;
     }
 
     inline bool isPromotion() const {
-        return flag & (PROMOTION | PROMOTION_CAPTURE);
+        return (flag & (PROMOTION | PROMOTION_CAPTURE)) != 0;
+    }
+
+    inline bool isTactical() const {
+        return isCapture() || isPromotion();
     }
 
     inline bool isQuiet() const {
-        return flag == QUIET;
+        return !isNone() && !isTactical();
+    }
+
+    inline bool isNormalQuiet() const {
+        return !isNone() && flag == QUIET;
     }
 };
 
@@ -296,6 +317,7 @@ inline History doMove(Position& pos, const Move& m) {
     h.oldKingSq = pos.kingSq[m.movedColor];
     h.oldHalfmoveClock = pos.halfmoveClock;
     h.oldTurn = pos.turn;
+    h.oldKey = pos.key;
 
     pos.key ^= zobristTurn[pos.turn];
 
@@ -989,3 +1011,6 @@ inline Score lazyEvaluate(const Position& pos, int povColor) {
 
 char pieceToChar(int piece, int color);
 void printBoard(const Position& pos);
+
+void printMove(const Move& move);
+void printMoveDetailed(const Move& move);

@@ -7,9 +7,19 @@
 Search::Search(TranspositionTable& table)
     : tt(table),
     rootBestMove() {
+    clearKillers();
+    clearHistory();
 }
 
 bool Search::sameMove(const Move& a, const Move& b) const {
+    if (a.from == 0 && a.to == 0) {
+        return false;
+    }
+
+    if (b.from == 0 && b.to == 0) {
+        return false;
+    }
+
     return a.from == b.from
         && a.to == b.to
         && a.promotion == b.promotion
@@ -28,6 +38,146 @@ std::string Search::pvToString(const PVLine& pv) const {
     }
 
     return out;
+}
+
+void Search::clearHistory() {
+    std::memset(quietHistory, 0, sizeof(quietHistory));
+    std::memset(captureHistory, 0, sizeof(captureHistory));
+}
+
+int Search::historyBonus(Depth depth) const {
+    int bonus = depth * depth;
+
+    if (bonus > 400) {
+        bonus = 400;
+    }
+
+    return bonus;
+}
+
+void Search::updateQuietHistory(const Move& move, int bonus) {
+    if (!move.isQuiet()) {
+        return;
+    }
+
+    int& entry = quietHistory[move.movedColor][move.from][move.to];
+
+    entry += bonus;
+
+    if (entry > 32000) {
+        entry = 32000;
+    }
+}
+
+void Search::updateCaptureHistory(const Move& move, int bonus) {
+    if (!move.isCapture()) {
+        return;
+    }
+
+    int moved = move.moved;
+    int captured = move.captured;
+    int to = move.to;
+
+    if (moved <= EMPTY || moved > KING || captured <= EMPTY || captured > KING) {
+        return;
+    }
+
+    int& entry = captureHistory[moved][to][captured];
+
+    entry += bonus;
+
+    if (entry > 32000) {
+        entry = 32000;
+    }
+}
+
+int Search::getQuietHistory(const Move& move) const {
+    if (!move.isQuiet()) {
+        return 0;
+    }
+
+    return quietHistory[move.movedColor][move.from][move.to];
+}
+
+int Search::getCaptureHistory(const Move& move) const {
+    if (!move.isCapture()) {
+        return 0;
+    }
+
+    int moved = move.moved;
+    int captured = move.captured;
+    int to = move.to;
+
+    if (moved <= EMPTY || moved > KING || captured <= EMPTY || captured > KING) {
+        return 0;
+    }
+
+    return captureHistory[moved][to][captured];
+}
+
+void Search::clearKillers() {
+    for (int ply = 0; ply < MAX_SEARCH_PLY; ++ply) {
+        for (int slot = 0; slot < KILLER_SLOTS; ++slot) {
+            killerMoves[ply][slot] = Move();
+        }
+    }
+}
+
+void Search::storeKiller(int ply, const Move& move) {
+    if (ply < 0 || ply >= MAX_SEARCH_PLY) {
+        return;
+    }
+
+    if (!move.isQuiet()) {
+        return;
+    }
+
+    if (sameMove(killerMoves[ply][0], move)) {
+        return;
+    }
+
+    killerMoves[ply][1] = killerMoves[ply][0];
+    killerMoves[ply][0] = move;
+}
+
+bool Search::isKillerMove(int ply, const Move& move) const {
+    if (ply < 0 || ply >= MAX_SEARCH_PLY) {
+        return false;
+    }
+
+    return sameMove(killerMoves[ply][0], move)
+        || sameMove(killerMoves[ply][1], move);
+}
+
+void Search::startTimer(int movetimeMs) {
+    stopSearch = false;
+    timeLimitMs = movetimeMs;
+    useTimeLimit = movetimeMs > 0;
+    searchStartTime = std::chrono::steady_clock::now();
+}
+
+bool Search::shouldStop() {
+    if (!useTimeLimit) {
+        return false;
+    }
+
+    if ((stats.nodes & 2047ULL) != 0ULL) {
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const int elapsedMs = static_cast<int>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - searchStartTime
+        ).count()
+        );
+
+    if (elapsedMs >= timeLimitMs) {
+        stopSearch = true;
+        return true;
+    }
+
+    return false;
 }
 
 Score Search::terminalScore(const Position& pos, int color) const {
@@ -53,12 +203,25 @@ int Search::scoreMove(
         score += 1'000'000;
         score += pieceValue[move.captured] * 16;
         score -= pieceValue[move.moved];
+
+        score += getCaptureHistory(move);
     }
 
     if (move.isPromotion()) {
         score += 900'000;
         score += pieceValue[move.promotion];
     }
+
+    if (move.isQuiet() && isKillerMove(pos.ply, move)) {
+        if (sameMove(killerMoves[pos.ply][0], move)) {
+            score += 800'000;
+        }
+        else {
+            score += 700'000;
+        }
+    }
+
+    score += getQuietHistory(move);
 
     return score;
 }
@@ -94,6 +257,14 @@ Score Search::qsearch(
 ) {
     stats.qnodes++;
 
+    if (shouldStop()) {
+        return lazyEvaluate(pos, pos.turn);
+    }
+
+    if (stopSearch) {
+        return lazyEvaluate(pos, pos.turn);
+    }
+
     Score standPat = lazyEvaluate(pos, pos.turn);
 
     if (standPat >= beta) {
@@ -108,6 +279,10 @@ Score Search::qsearch(
     generateMoves(pos, moves, pos.turn);
 
     for (int i = 0; i < moves.count; ++i) {
+        if (stopSearch) {
+            break;
+        }
+
         const Move& move = moves[i];
 
         if (!move.isCapture() && !move.isPromotion()) {
@@ -150,6 +325,14 @@ Score Search::negamax(
     stats.nodes++;
     pv.clear();
 
+    if (shouldStop()) {
+        return lazyEvaluate(pos, pos.turn);
+    }
+
+    if (stopSearch) {
+        return lazyEvaluate(pos, pos.turn);
+    }
+
     const Score oldAlpha = alpha;
 
     if (depth <= 0) {
@@ -179,6 +362,10 @@ Score Search::negamax(
     Score bestScore = -INF;
 
     for (int i = 0; i < moves.count; ++i) {
+        if (stopSearch) {
+            break;
+        }
+
         const Move& move = moves[i];
 
         PVLine childPv;
@@ -202,6 +389,8 @@ Score Search::negamax(
         }
 
         if (score > alpha) {
+            alpha = score;
+
             pv.length = 1;
             pv.moves[0] = move;
 
@@ -213,9 +402,20 @@ Score Search::negamax(
 
             pv.length += copyCount;
         }
-
+        
         if (alpha >= beta) {
             stats.betaCutoffs++;
+
+            const int bonus = historyBonus(depth);
+
+            if (move.isQuiet()) {
+                storeKiller(pos.ply, move);
+                updateQuietHistory(move, bonus);
+            }
+            else if (move.isCapture()) {
+                updateCaptureHistory(move, bonus);
+            }
+
             break;
         }
     }
@@ -244,17 +444,21 @@ Score Search::negamax(
     return bestScore;
 }
 
-Move Search::findBestMove(Position& pos, Depth maxDepth) {
+Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
     stats.clear();
+    clearKillers();
     tt.newSearch();
+    startTimer(movetimeMs);
 
-    const auto searchStart = std::chrono::high_resolution_clock::now();
-
-    Move bestMove;
+    Move bestMove{};
     PVLine bestPv;
     Score bestScore = -INF;
 
     for (Depth depth = 1; depth <= maxDepth; ++depth) {
+        if (stopSearch) {
+            break;
+        }
+
         MoveList moves;
         generateLegalMoves(pos, moves, pos.turn);
 
@@ -281,6 +485,10 @@ Move Search::findBestMove(Position& pos, Depth maxDepth) {
         rootPv.clear();
 
         for (int i = 0; i < moves.count; ++i) {
+            if (stopSearch) {
+                break;
+            }
+
             const Move& move = moves[i];
 
             PVLine childPv;
@@ -297,6 +505,10 @@ Move Search::findBestMove(Position& pos, Depth maxDepth) {
             );
 
             undoMove(pos, move, h);
+
+            if (stopSearch) {
+                break;
+            }
 
             if (score > depthBestScore) {
                 depthBestScore = score;
@@ -319,6 +531,10 @@ Move Search::findBestMove(Position& pos, Depth maxDepth) {
             }
         }
 
+        if (stopSearch) {
+            break;
+        }
+
         Score eval = lazyEvaluate(pos, pos.turn);
 
         tt.store(
@@ -335,9 +551,9 @@ Move Search::findBestMove(Position& pos, Depth maxDepth) {
         bestScore = depthBestScore;
         bestPv = rootPv;
 
-        const auto now = std::chrono::high_resolution_clock::now();
+        const auto now = std::chrono::steady_clock::now();
         const double elapsedSeconds =
-            std::chrono::duration<double>(now - searchStart).count();
+            std::chrono::duration<double>(now - searchStartTime).count();
 
         const uint64_t totalNodes = stats.nodes + stats.qnodes;
 
@@ -351,6 +567,7 @@ Move Search::findBestMove(Position& pos, Depth maxDepth) {
         std::cout << "info depth " << depth
             << " score cp " << bestScore
             << " nodes " << stats.nodes
+            << " qnodes " << stats.qnodes
             << " time " << timeMs
             << " nps " << nps
             << " pv " << pvToString(bestPv)

@@ -142,12 +142,14 @@
     <ClCompile Include="eval.cpp" />
     <ClCompile Include="IronPhoenix.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="parser.cpp" />
     <ClCompile Include="search.cpp" />
     <ClCompile Include="tt.cpp" />
     <ClCompile Include="zobrist.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="main.h" />
+    <ClInclude Include="parser.h" />
     <ClInclude Include="preft.h" />
     <ClInclude Include="search.h" />
     <ClInclude Include="tt.h" />

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -321,13 +322,15 @@ int main()
     TranspositionTable TT;
     TT.resizeMB(64);
 
-    Search search(TT);
+    auto search = std::make_unique<Search>(TT);
+
+    std::cout << "Iron Phoenix by Nicholas English - v1.0.0\n";
 
     std::string line;
 
     while (std::getline(std::cin, line)) {
         if (line == "uci") {
-            std::cout << "id name IronPhoenix\n";
+            std::cout << "id name Iron Phoenix\n";
             std::cout << "id author Nicholas English\n";
             std::cout << "uciok\n";
         }
@@ -344,17 +347,21 @@ int main()
             std::istringstream iss(line);
 
             std::string token;
-            int depth = 3;
+            int depth = 64;
+            int movetimeMs = 0;
 
-            iss >> token; // go
+            iss >> token;
 
             while (iss >> token) {
                 if (token == "depth") {
                     iss >> depth;
                 }
+                else if (token == "movetime") {
+                    iss >> movetimeMs;
+                }
             }
 
-            Move bestMove = search.findBestMove(pos, depth);
+            Move bestMove = search->findBestMove(pos, depth, movetimeMs);
 
             if (bestMove.from == 0 && bestMove.to == 0) {
                 std::cout << "bestmove 0000\n";
