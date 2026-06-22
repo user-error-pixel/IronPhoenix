@@ -66,7 +66,8 @@ enum MoveFlag : int {
     PROMOTION = 1 << 1,
     PROMOTION_CAPTURE = 1 << 2,
     CASTLE = 1 << 3,
-    EP_CAPTURE = 1 << 4
+    EP_CAPTURE = 1 << 4,
+    DOUBLE_PAWN_PUSH = 1 << 5
 };
 
 inline int teamOfColor(int color) {
@@ -369,7 +370,16 @@ inline History doMove(Position& pos, const Move& m) {
         pos.board[m.to] = m.promotion;
     }
 
+    if (m.flag & DOUBLE_PAWN_PUSH) {
+        const int skippedSq = m.from + pawnInfo[m.movedColor].forward;
+
+        pos.key ^= zobristEp[pos.turn][pos.enPassantSq[skippedSq]];
+
+        pos.enPassantSq[m.movedColor] = skippedSq;
+    }
+
     pos.turn++;
+
     if (pos.turn > GREEN) {
         pos.turn = RED;
     }
@@ -446,10 +456,58 @@ constexpr int baseMailbox[BOARD_SIZE] = {
     -1, -1, -1, -1,  0,  0,  0,  0,  0,  0,  0,  0, -1, -1, -1, -1,
 };
 
+inline bool isPawnStartSquare(int color, int sq) {
+    if (sq < 0 || sq >= BOARD_SIZE) {
+        return false;
+    }
+
+    if (baseMailbox[sq] == -1) {
+        return false;
+    }
+
+    const int row = sq / MAILBOX_WIDTH;
+    const int col = sq % MAILBOX_WIDTH;
+
+    switch (color) {
+    case RED:
+        return row == 12;
+
+    case YELLOW:
+        return row == 1;
+
+    case BLUE:
+        return col == 2;
+
+    case GREEN:
+        return col == 13;
+
+    default:
+        return false;
+    }
+}
+
 inline void initBoardValidity(Position& pos) {
     for (int sq = 0; sq < BOARD_SIZE; ++sq) {
         pos.valid[sq] = baseMailbox[sq] != -1;
     }
+}
+
+inline void addDoublePawnMove(
+    MoveList& list,
+    int from,
+    int to,
+    int color
+) {
+    list.push(Move(
+        from,
+        to,
+        PAWN,
+        EMPTY,
+        EMPTY,
+        DOUBLE_PAWN_PUSH,
+        color,
+        NO_COLOR
+    ));
 }
 
 constexpr int DIR_N = -16;
@@ -686,6 +744,15 @@ inline void generatePawnMoves(
 
     if (pos.isValidSquare(one) && pos.board[one] == EMPTY) {
         addPawnMove(pos, list, from, one, color, false);
+
+        const int two = one + p.forward;
+
+        if (isPawnStartSquare(color, from) &&
+            pos.isValidSquare(two) &&
+            pos.board[two] == EMPTY) {
+
+            addDoublePawnMove(list, from, two, color);
+        }
     }
 
     int caps[2] = {

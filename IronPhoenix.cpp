@@ -342,6 +342,10 @@ const char* moveFlagName(const Move& m) {
         return "QUIET";
     }
 
+    if (m.flag & DOUBLE_PAWN_PUSH) {
+        return "DOUBLE_PAWN_PUSH";
+    }
+
     if (m.flag & EP_CAPTURE) {
         return "EP_CAPTURE";
     }
