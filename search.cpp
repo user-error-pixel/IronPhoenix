@@ -149,6 +149,12 @@ bool Search::isKillerMove(int ply, const Move& move) const {
         || sameMove(killerMoves[ply][1], move);
 }
 
+void Search::updateSelDepth(const Position& pos) {
+    if (pos.ply > stats.seldepth) {
+        stats.seldepth = pos.ply;
+    }
+}
+
 void Search::startTimer(int movetimeMs) {
     stopSearch = false;
     timeLimitMs = movetimeMs;
@@ -325,6 +331,8 @@ Score Search::negamax(
     stats.nodes++;
     pv.clear();
 
+    updateSelDepth(pos);
+
     if (shouldStop()) {
         return lazyEvaluate(pos, pos.turn);
     }
@@ -459,6 +467,8 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
             break;
         }
 
+        stats.seldepth = 0;
+
         MoveList moves;
         generateLegalMoves(pos, moves, pos.turn);
 
@@ -565,6 +575,7 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
             static_cast<uint64_t>(elapsedSeconds * 1000.0);
 
         std::cout << "info depth " << depth
+            << " seldepth " << stats.seldepth
             << " score cp " << bestScore
             << " nodes " << stats.nodes
             << " qnodes " << stats.qnodes

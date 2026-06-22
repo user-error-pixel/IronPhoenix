@@ -24,11 +24,14 @@ struct SearchStats {
     uint64_t ttHits = 0;
     uint64_t betaCutoffs = 0;
 
+    int seldepth = 0;
+
     void clear() {
         nodes = 0;
         qnodes = 0;
         ttHits = 0;
         betaCutoffs = 0;
+        seldepth = 0;
     }
 };
 
@@ -90,6 +93,8 @@ private:
 
     bool shouldStop();
     void startTimer(int movetimeMs);
+
+    void updateSelDepth(const Position& pos);
 
     Move rootBestMove;
 

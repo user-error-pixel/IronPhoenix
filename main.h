@@ -373,7 +373,7 @@ inline History doMove(Position& pos, const Move& m) {
     if (m.flag & DOUBLE_PAWN_PUSH) {
         const int skippedSq = m.from + pawnInfo[m.movedColor].forward;
 
-        pos.key ^= zobristEp[pos.turn][pos.enPassantSq[skippedSq]];
+        pos.key ^= zobristEp[pos.turn][skippedSq];
 
         pos.enPassantSq[m.movedColor] = skippedSq;
     }
