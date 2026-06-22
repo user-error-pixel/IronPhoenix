@@ -144,6 +144,8 @@ struct MoveList {
 };
 
 struct Position {
+    uint64_t key;
+
     int board[BOARD_SIZE];
     int color[BOARD_SIZE];
 
@@ -177,6 +179,7 @@ struct Position {
         turn = RED;
         halfmoveClock = 0;
         ply = 0;
+        key = 0ULL;
     }
 
     inline bool isValidSquare(int sq) const {
