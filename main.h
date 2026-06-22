@@ -17,6 +17,12 @@ constexpr int YELLOW_PROMO_ROW = 10;
 constexpr int BLUE_PROMO_COL = 11;
 constexpr int GREEN_PROMO_COL = 4;
 
+constexpr Score INF = 30000000;
+constexpr Score MATE_SCORE = 29000000;
+
+constexpr int BOARD_WIDTH = 16;
+constexpr int BOARD_RANKS = 14;
+
 extern int knightMoveCount[BOARD_SIZE];
 extern int knightMoves[BOARD_SIZE][8];
 
@@ -795,3 +801,6 @@ inline Score lazyEvaluate(const Position& pos, int povColor) {
 
     return score;
 }
+
+char pieceToChar(int piece, int color);
+void printBoard(const Position& pos);
