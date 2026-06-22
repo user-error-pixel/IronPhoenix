@@ -24,6 +24,7 @@ constexpr int BOARD_WIDTH = 16;
 constexpr int BOARD_RANKS = 14;
 
 extern uint64_t zobristPiece[5][7][BOARD_SIZE];
+extern uint64_t zobristEp[5][BOARD_SIZE];
 extern uint64_t zobristTurn[5];
 
 void initZobrist();
@@ -340,7 +341,10 @@ inline History doMove(Position& pos, const Move& m) {
 
     pos.key ^= zobristTurn[pos.turn];
 
-    pos.enPassantSq[m.movedColor] = -1;
+    if (pos.enPassantSq[m.movedColor] != -1) {
+        pos.key ^= zobristEp[pos.turn][pos.enPassantSq[m.movedColor]];
+        pos.enPassantSq[m.movedColor] = -1;
+    }
 
     if (m.flag & EP_CAPTURE) {
         const int capSq = m.from + pawnInfo[m.movedColor].forward;

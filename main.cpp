@@ -229,7 +229,7 @@ std::string flagString(const Move& move) {
     }
 
     if (!out.empty()) {
-        out.pop_back(); // remove last |
+        out.pop_back();
     }
 
     return out.empty() ? "UNKNOWN_FLAG" : out;

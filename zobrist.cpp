@@ -2,6 +2,7 @@
 #include "main.h"
 
 uint64_t zobristPiece[5][7][BOARD_SIZE];
+uint64_t zobristEp[5][BOARD_SIZE];
 uint64_t zobristTurn[5];
 
 static uint64_t zobristSeed = 0x9E3779B97F4A7C15ULL;
@@ -21,6 +22,12 @@ void initZobrist() {
             for (int sq = 0; sq < BOARD_SIZE; ++sq) {
                 zobristPiece[color][piece][sq] = splitmix64();
             }
+        }
+    }
+
+    for (int color = 0; color < 5; ++color) {
+        for (int sq = 0; sq < BOARD_SIZE; ++sq) {
+            zobristEp[color][sq] = splitmix64();
         }
     }
 
@@ -46,6 +53,14 @@ uint64_t computeZobristKey(const Position& pos) {
     }
 
     key ^= zobristTurn[pos.turn];
+
+    for (int color = RED; color <= GREEN; ++color) {
+        int ep = pos.enPassantSq[color];
+
+        if (ep >= 0 && ep < BOARD_SIZE) {
+            key ^= zobristEp[color][ep];
+        }
+    }
 
     return key;
 }
