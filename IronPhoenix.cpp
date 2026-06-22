@@ -5,6 +5,7 @@
 #include <limits>
 #include <cctype>
 #include "main.h"
+#include "preft.h"
 
 std::string squareToString(int sq) {
     if (sq < 0 || sq >= BOARD_SIZE) {
@@ -345,6 +346,39 @@ int main()
             }
 
 			// Call the search function to find the best move for the current position and depth.
+        }
+        else if (line.rfind("perft", 0) == 0) {
+            std::istringstream iss(line);
+
+            std::string token;
+            int depth = 1;
+
+            iss >> token;
+            iss >> depth;
+
+            runPerft(pos, depth);
+        }
+        else if (line.rfind("divide", 0) == 0) {
+            std::istringstream iss(line);
+
+            std::string token;
+            int depth = 1;
+
+            iss >> token;
+            iss >> depth;
+
+            perftDivide(pos, depth);
+        }
+        else if (line.rfind("perftdebug", 0) == 0) {
+            std::istringstream iss(line);
+
+            std::string token;
+            int depth = 1;
+
+            iss >> token;
+            iss >> depth;
+
+            runPerftDebug(pos, depth);
         }
         else if (line == "d") {
             printBoard(pos);
