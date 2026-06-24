@@ -370,22 +370,18 @@ bool Search::canNullMovePrune(
     Score beta,
     bool isPv
 ) const {
-    // Never null-move prune PV nodes.
     if (isPv) {
         return false;
     }
 
-    // Never pass while in check.
     if (ss->inCheck) {
         return false;
     }
 
-    // Keep null move out of very shallow nodes.
     if (depth < NMP_MIN_DEPTH) {
         return false;
     }
 
-    // Do not null-move prune near mate scores.
     if (std::abs(beta) > MATE_SCORE - 1000) {
         return false;
     }
@@ -432,6 +428,69 @@ Depth Search::nullMoveReduction(
     reduction = std::clamp<Depth>(reduction, 1, depth - 1);
 
     return reduction;
+}
+
+Depth Search::internalIterativeReduction(
+    Depth depth,
+    bool isPv,
+    const Move& ttMove,
+    bool ttPv
+) const {
+    if (!ttMove.isNone()) {
+        return depth;
+    }
+
+    if (isPv || ttPv) {
+        if (depth >= IIR_PV_MIN_DEPTH) {
+            return depth - 1;
+        }
+
+        return depth;
+    }
+
+    if (depth >= IIR_NONPV_MIN_DEPTH) {
+        return depth - 1;
+    }
+
+    return depth;
+}
+
+Depth Search::failHighReductionAdjustment(
+    const SearchStack* ss,
+    Depth depth,
+    const Move& move,
+    Score alpha,
+    Score beta,
+    Score score,
+    Depth currentReduction
+) const {
+    if (currentReduction <= 0) {
+        return 0;
+    }
+
+    if (depth < FHR_MIN_DEPTH) {
+        return currentReduction;
+    }
+
+    if (!move.isQuiet()) {
+        return currentReduction;
+    }
+
+    if (ss->inCheck) {
+        return currentReduction;
+    }
+
+    const Score failHighMargin = score - alpha;
+
+    if (failHighMargin >= 300) {
+        return std::max<Depth>(1, currentReduction - 1);
+    }
+
+    if (failHighMargin >= 150 && ss->improving) {
+        return std::max<Depth>(1, currentReduction - 1);
+    }
+
+    return 0;
 }
 
 Score Search::qsearch(
@@ -592,6 +651,8 @@ Score Search::negamax(
         }
     }
 
+    depth = internalIterativeReduction(depth, isPv, ttMove, ttPv);
+
     MoveList moves;
     generateLegalMoves(pos, moves, pos.turn);
 
@@ -660,10 +721,22 @@ Score Search::negamax(
                 if (!stopSearch && score > alpha) {
                     childPv.clear();
 
+                    const Depth adjustedReduction = failHighReductionAdjustment(
+                        ss,
+                        depth,
+                        move,
+                        alpha,
+                        beta,
+                        score,
+                        reduction
+                    );
+
+                    const Depth retryDepth = std::max<Depth>(0, newDepth - adjustedReduction);
+
                     score = -negamax(
                         pos,
                         ss + 1,
-                        newDepth,
+                        retryDepth,
                         -alpha - 1,
                         -alpha,
                         false,

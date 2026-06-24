@@ -15,6 +15,11 @@ constexpr Depth NMP_BASE_REDUCTION = 3;
 constexpr Score NMP_EVAL_MARGIN = 50;
 constexpr Score NMP_MAX_EVAL_BONUS = 800;
 
+constexpr Depth IIR_PV_MIN_DEPTH = 4;
+constexpr Depth IIR_NONPV_MIN_DEPTH = 6;
+
+constexpr Depth FHR_MIN_DEPTH = 3;
+
 constexpr int MAX_SEARCH_PLY = 128;
 constexpr int KILLER_SLOTS = 2;
 
@@ -209,6 +214,23 @@ private:
         Depth depth,
         Score beta,
         bool isPv
+    ) const;
+
+    Depth internalIterativeReduction(
+        Depth depth,
+        bool isPv,
+        const Move& ttMove,
+        bool ttPv
+    ) const;
+
+    Depth failHighReductionAdjustment(
+        const SearchStack* ss,
+        Depth depth,
+        const Move& move,
+        Score alpha,
+        Score beta,
+        Score score,
+        Depth currentReduction
     ) const;
 
     Depth nullMoveReduction(
