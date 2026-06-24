@@ -222,13 +222,6 @@ private:
         bool isPv
     ) const;
 
-    Depth internalIterativeReduction(
-        Depth depth,
-        bool isPv,
-        const Move& ttMove,
-        bool ttPv
-    ) const;
-
     Depth failHighReductionAdjustment(
         const SearchStack* ss,
         Depth depth,

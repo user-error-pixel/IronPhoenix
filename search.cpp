@@ -430,31 +430,6 @@ Depth Search::nullMoveReduction(
     return reduction;
 }
 
-Depth Search::internalIterativeReduction(
-    Depth depth,
-    bool isPv,
-    const Move& ttMove,
-    bool ttPv
-) const {
-    if (!ttMove.isNone()) {
-        return depth;
-    }
-
-    if (isPv || ttPv) {
-        if (depth >= IIR_PV_MIN_DEPTH) {
-            return depth - 1;
-        }
-
-        return depth;
-    }
-
-    if (depth >= IIR_NONPV_MIN_DEPTH) {
-        return depth - 1;
-    }
-
-    return depth;
-}
-
 Depth Search::failHighReductionAdjustment(
     const SearchStack* ss,
     Depth depth,
@@ -500,7 +475,6 @@ Score Search::qsearch(
     int qPly
 ) {
     stats.qnodes++;
-    updateSelDepth(pos);
 
     if (shouldStop()) {
         return lazyEvaluate(pos, pos.turn);
@@ -514,16 +488,10 @@ Score Search::qsearch(
 
     Score standPat = lazyEvaluate(pos, pos.turn);
 
-    // If qsearch gets too deep, stop extending and return static eval.
-    //
-    // If in check, this is technically risky because we are not forcing
-    // an evasion anymore. But it prevents qsearch explosions.
-    // For a safer version, see the note below.
     if (qPly >= QS_MAX_DEPTH) {
         return standPat;
     }
 
-    // Stand pat is only allowed when not in check.
     if (!inCheckNow) {
         if (standPat >= beta) {
             return beta;
@@ -532,8 +500,7 @@ Score Search::qsearch(
         if (standPat > alpha) {
             alpha = standPat;
         }
-
-        // Node-level delta pruning.
+        
         const Score bigDelta = pieceValue[QUEEN] + QS_DELTA_MARGIN;
 
         if (standPat + bigDelta < alpha) {
@@ -651,7 +618,9 @@ Score Search::negamax(
 
     if (tt.probe(pos, depth, alpha, beta, ttScore, ttMove, ttEval, ttPv)) {
         stats.ttHits++;
-        return ttScore;
+
+        if (!isPv)
+            return ttScore;
     }
 
     ss->ply = pos.ply;
@@ -710,7 +679,9 @@ Score Search::negamax(
         }
     }
 
-    depth = internalIterativeReduction(depth, isPv, ttMove, ttPv);
+    if (!ss->inCheck && !ttMove.isNone() && depth >= 4) {
+        depth -= 1;
+    }
 
     MoveList moves;
     generateLegalMoves(pos, moves, pos.turn);
