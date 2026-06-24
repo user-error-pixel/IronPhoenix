@@ -350,6 +350,10 @@ Score Search::qsearch(
         return beta;
     }
 
+    if (standPat < alpha - pieceValue[QUEEN]) {
+        return alpha;
+    }
+
     if (standPat > alpha) {
         alpha = standPat;
     }
@@ -492,21 +496,60 @@ Score Search::negamax(
 
         Score score;
 
-        if (reduction > 0) {
-            const Depth reducedDepth = std::max<Depth>(0, newDepth - reduction);
+        const bool firstMove = i == 0;
 
+        if (firstMove) {
             score = -negamax(
                 pos,
                 ss + 1,
-                reducedDepth,
-                -alpha - 1,
+                newDepth,
+                -beta,
                 -alpha,
-                false,
+                isPv,
                 childPv
             );
+        }
+        else {
+            if (reduction > 0) {
+                const Depth reducedDepth = std::max<Depth>(0, newDepth - reduction);
 
-            if (!stopSearch && score > alpha) {
+                score = -negamax(
+                    pos,
+                    ss + 1,
+                    reducedDepth,
+                    -alpha - 1,
+                    -alpha,
+                    false,
+                    childPv
+                );
 
+                if (!stopSearch && score > alpha) {
+                    childPv.clear();
+
+                    score = -negamax(
+                        pos,
+                        ss + 1,
+                        newDepth,
+                        -alpha - 1,
+                        -alpha,
+                        false,
+                        childPv
+                    );
+                }
+            }
+            else {
+                score = -negamax(
+                    pos,
+                    ss + 1,
+                    newDepth,
+                    -alpha - 1,
+                    -alpha,
+                    false,
+                    childPv
+                );
+            }
+
+            if (!stopSearch && score > alpha && score < beta) {
                 childPv.clear();
 
                 score = -negamax(
@@ -515,21 +558,10 @@ Score Search::negamax(
                     newDepth,
                     -beta,
                     -alpha,
-                    isPv && i == 0,
+                    isPv,
                     childPv
                 );
             }
-        }
-        else {
-            score = -negamax(
-                pos,
-                ss + 1,
-                newDepth,
-                -beta,
-                -alpha,
-                isPv && i == 0,
-                childPv
-            );
         }
 
         undoMove(pos, move, h);
@@ -630,77 +662,158 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
 
         orderMoves(pos, moves, ttMove);
 
-        Move depthBestMove = moves[0];
+        Score window = ASPIRATION_INITIAL_WINDOW;
 
         Score alpha = -INF;
         Score beta = INF;
-        Score depthBestScore = -INF;
 
-        PVLine rootPv;
-        rootPv.clear();
-
-        for (int i = 0; i < MAX_PLY + 8; ++i) {
-            stack[i].clear();
+        if (depth >= 4 && bestScore > -INF / 2 && bestScore < INF / 2) {
+            alpha = bestScore - window;
+            beta = bestScore + window;
         }
 
-        SearchStack* ss = stack;
-        ss->clear();
-        ss->ply = pos.ply;
-        ss->staticEval = lazyEvaluate(pos, pos.turn);
-        ss->inCheck = inCheck(pos, pos.turn);
+        bool depthCompleted = false;
 
-        for (int i = 0; i < moves.count; ++i) {
-            if (stopSearch) {
-                break;
+        Move depthBestMove = moves[0];
+        Score depthBestScore = -INF;
+        PVLine rootPv;
+
+        while (!stopSearch) {
+            depthBestMove = moves[0];
+            depthBestScore = -INF;
+            rootPv.clear();
+
+            for (int i = 0; i < MAX_PLY + 8; ++i) {
+                stack[i].clear();
             }
 
-            const Move& move = moves[i];
+            SearchStack* ss = stack;
+            ss->clear();
+            ss->ply = pos.ply;
+            ss->staticEval = lazyEvaluate(pos, pos.turn);
+            ss->inCheck = inCheck(pos, pos.turn);
 
-            ss->moveCount = i + 1;
-            ss->currentMove = move;
+            Score searchAlpha = alpha;
 
-            PVLine childPv;
-
-            History h = doMove(pos, move);
-
-            Score score = -negamax(
-                pos,
-                ss + 1,
-                depth - 1,
-                -beta,
-                -alpha,
-                i == 0,
-                childPv
-            );
-
-            undoMove(pos, move, h);
-
-            if (stopSearch) {
-                break;
-            }
-
-            if (score > depthBestScore) {
-                depthBestScore = score;
-                depthBestMove = move;
-            }
-
-            if (score > alpha) {
-                alpha = score;
-
-                rootPv.length = 1;
-                rootPv.moves[0] = move;
-
-                const int copyCount = std::min(childPv.length, MAX_PLY - 1);
-
-                for (int j = 0; j < copyCount; ++j) {
-                    rootPv.moves[j + 1] = childPv.moves[j];
+            for (int i = 0; i < moves.count; ++i) {
+                if (stopSearch) {
+                    break;
                 }
 
-                rootPv.length += copyCount;
+                const Move& move = moves[i];
+
+                ss->moveCount = i + 1;
+                ss->currentMove = move;
+
+                PVLine childPv;
+
+                History h = doMove(pos, move);
+
+                Score score;
+
+                if (i == 0) {
+                    score = -negamax(
+                        pos,
+                        ss + 1,
+                        depth - 1,
+                        -beta,
+                        -searchAlpha,
+                        true,
+                        childPv
+                    );
+                }
+                else {
+                    score = -negamax(
+                        pos,
+                        ss + 1,
+                        depth - 1,
+                        -searchAlpha - 1,
+                        -searchAlpha,
+                        false,
+                        childPv
+                    );
+
+                    if (!stopSearch && score > searchAlpha && score < beta) {
+                        childPv.clear();
+
+                        score = -negamax(
+                            pos,
+                            ss + 1,
+                            depth - 1,
+                            -beta,
+                            -searchAlpha,
+                            true,
+                            childPv
+                        );
+                    }
+                }
+
+                undoMove(pos, move, h);
+
+                if (stopSearch) {
+                    break;
+                }
+
+                if (score > depthBestScore) {
+                    depthBestScore = score;
+                    depthBestMove = move;
+                }
+
+                if (score > searchAlpha) {
+                    searchAlpha = score;
+
+                    rootPv.length = 1;
+                    rootPv.moves[0] = move;
+
+                    const int copyCount = std::min(childPv.length, MAX_PLY - 1);
+
+                    for (int j = 0; j < copyCount; ++j) {
+                        rootPv.moves[j + 1] = childPv.moves[j];
+                    }
+
+                    rootPv.length += copyCount;
+                }
             }
+
+            if (stopSearch) {
+                break;
+            }
+
+            if (depthBestScore <= alpha) {
+                window *= 2;
+
+                if (window > ASPIRATION_MAX_WINDOW) {
+                    alpha = -INF;
+                    beta = INF;
+                }
+                else {
+                    alpha = std::max<Score>(-INF, depthBestScore - window);
+                    beta = depthBestScore + window;
+                }
+
+                continue;
+            }
+
+            if (depthBestScore >= beta) {
+                window *= 2;
+
+                if (window > ASPIRATION_MAX_WINDOW) {
+                    alpha = -INF;
+                    beta = INF;
+                }
+                else {
+                    alpha = depthBestScore - window;
+                    beta = std::min<Score>(INF, depthBestScore + window);
+                }
+
+                continue;
+            }
+
+            depthCompleted = true;
+            break;
         }
 
-        if (stopSearch) {
+        if (!depthCompleted || stopSearch) {
             break;
         }
 
@@ -737,7 +850,7 @@ Move Search::findBestMove(Position& pos, Depth maxDepth, int movetimeMs) {
             << " seldepth " << stats.seldepth;
 
         if (isMateScore(bestScore)) {
-            std::cout << " score cp mate " << signedMateDistanceMoves(bestScore);
+            std::cout << " score mate " << signedMateDistanceMoves(bestScore);
         }
         else {
             std::cout << " score cp " << bestScore;

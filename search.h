@@ -7,6 +7,9 @@
 
 constexpr int MAX_PLY = 128;
 
+constexpr Score ASPIRATION_INITIAL_WINDOW = 50;
+constexpr Score ASPIRATION_MAX_WINDOW = 2000;
+
 constexpr int MAX_SEARCH_PLY = 128;
 constexpr int KILLER_SLOTS = 2;
 

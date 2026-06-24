@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="IronPhoenix.vcxproj" />
+  <Project Path="IronPhoenix.vcxproj" Id="b954ba08-4955-42e3-9ba4-94580c33a4a9" />
 </Solution>
