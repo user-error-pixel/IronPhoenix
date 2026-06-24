@@ -10,6 +10,11 @@ constexpr int MAX_PLY = 128;
 constexpr Score ASPIRATION_INITIAL_WINDOW = 50;
 constexpr Score ASPIRATION_MAX_WINDOW = 2000;
 
+constexpr int QS_MAX_DEPTH = 8;
+
+constexpr Score QS_DELTA_MARGIN = 200;
+constexpr Score QS_PROMOTION_DELTA = 900;
+
 constexpr Depth NMP_MIN_DEPTH = 3;
 constexpr Depth NMP_BASE_REDUCTION = 3;
 constexpr Score NMP_EVAL_MARGIN = 50;
@@ -168,7 +173,8 @@ public:
     Score qsearch(
         Position& pos,
         Score alpha,
-        Score beta
+        Score betaScore,
+        int qPly = 0
     );
 
     void stop();

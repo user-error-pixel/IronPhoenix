@@ -496,9 +496,11 @@ Depth Search::failHighReductionAdjustment(
 Score Search::qsearch(
     Position& pos,
     Score alpha,
-    Score beta
+    Score beta,
+    int qPly
 ) {
     stats.qnodes++;
+    updateSelDepth(pos);
 
     if (shouldStop()) {
         return lazyEvaluate(pos, pos.turn);
@@ -508,18 +510,48 @@ Score Search::qsearch(
         return lazyEvaluate(pos, pos.turn);
     }
 
+    const bool inCheckNow = inCheck(pos, pos.turn);
+
     Score standPat = lazyEvaluate(pos, pos.turn);
 
-    if (standPat >= beta) {
-        return beta;
+    // If qsearch gets too deep, stop extending and return static eval.
+    //
+    // If in check, this is technically risky because we are not forcing
+    // an evasion anymore. But it prevents qsearch explosions.
+    // For a safer version, see the note below.
+    if (qPly >= QS_MAX_DEPTH) {
+        return standPat;
     }
 
-    if (standPat > alpha) {
-        alpha = standPat;
+    // Stand pat is only allowed when not in check.
+    if (!inCheckNow) {
+        if (standPat >= beta) {
+            return beta;
+        }
+
+        if (standPat > alpha) {
+            alpha = standPat;
+        }
+
+        // Node-level delta pruning.
+        const Score bigDelta = pieceValue[QUEEN] + QS_DELTA_MARGIN;
+
+        if (standPat + bigDelta < alpha) {
+            return alpha;
+        }
     }
 
     MoveList moves;
-    generateMoves(pos, moves, pos.turn);
+
+    if (inCheckNow) {
+        generateLegalMoves(pos, moves, pos.turn);
+    }
+    else {
+        generateMoves(pos, moves, pos.turn);
+
+        Move noTtMove;
+        orderMoves(pos, moves, noTtMove);
+    }
 
     for (int i = 0; i < moves.count; ++i) {
         if (stopSearch) {
@@ -528,20 +560,47 @@ Score Search::qsearch(
 
         const Move& move = moves[i];
 
-        if (!move.isCapture() && !move.isPromotion()) {
+        if (!inCheckNow && !move.isCapture() && !move.isPromotion()) {
             continue;
+        }
+
+        if (!inCheckNow) {
+            if (move.isCapture() && !move.isPromotion()) {
+                const Score captureDelta =
+                    pieceValue[move.captured] + QS_DELTA_MARGIN;
+
+                if (standPat + captureDelta < alpha) {
+                    continue;
+                }
+            }
+
+            if (move.isPromotion()) {
+                const Score promotionDelta =
+                    QS_PROMOTION_DELTA + QS_DELTA_MARGIN;
+
+                if (standPat + promotionDelta < alpha) {
+                    continue;
+                }
+            }
+
+            if (move.isCapture() &&
+                !move.isPromotion() &&
+                move.captured != KING &&
+                pieceValue[move.captured] + 200 < pieceValue[move.moved]) {
+                continue;
+            }
         }
 
         const int movingColor = pos.turn;
 
         History h = doMove(pos, move);
 
-        if (inCheck(pos, movingColor)) {
+        if (!inCheckNow && inCheck(pos, movingColor)) {
             undoMove(pos, move, h);
             continue;
         }
 
-        Score score = -qsearch(pos, -beta, -alpha);
+        Score score = -qsearch(pos, -beta, -alpha, qPly + 1);
 
         undoMove(pos, move, h);
 
@@ -582,7 +641,7 @@ Score Search::negamax(
     const Score oldAlpha = alpha;
 
     if (depth <= 0) {
-        return qsearch(pos, alpha, beta);
+        return qsearch(pos, alpha, beta, 0);
     }
 
     Move ttMove;
