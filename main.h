@@ -492,6 +492,56 @@ inline void movePiece(Position& pos, int from, int to) {
     }
 }
 
+struct NullMoveHistory {
+    int oldTurn;
+    int oldHalfmoveClock;
+    int oldPly;
+
+    int oldEnPassantSq[5];
+
+    uint64_t oldKey;
+};
+
+inline NullMoveHistory doNullMove(Position& pos) {
+    NullMoveHistory h;
+
+    h.oldTurn = pos.turn;
+    h.oldHalfmoveClock = pos.halfmoveClock;
+    h.oldPly = pos.ply;
+    h.oldKey = pos.key;
+
+    std::memcpy(h.oldEnPassantSq, pos.enPassantSq, sizeof(pos.enPassantSq));
+
+    pos.key ^= zobristTurn[pos.turn];
+
+    if (pos.enPassantSq[pos.turn] != -1) {
+        pos.key ^= zobristEp[pos.turn][pos.enPassantSq[pos.turn]];
+        pos.enPassantSq[pos.turn] = -1;
+    }
+
+    pos.turn++;
+    if (pos.turn > GREEN) {
+        pos.turn = RED;
+    }
+
+    pos.key ^= zobristTurn[pos.turn];
+
+    pos.halfmoveClock++;
+    pos.ply++;
+
+    return h;
+}
+
+inline void undoNullMove(Position& pos, const NullMoveHistory& h) {
+    pos.turn = h.oldTurn;
+    pos.halfmoveClock = h.oldHalfmoveClock;
+    pos.ply = h.oldPly;
+
+    std::memcpy(pos.enPassantSq, h.oldEnPassantSq, sizeof(pos.enPassantSq));
+
+    pos.key = h.oldKey;
+}
+
 struct PawnMoveInfo {
     int forward;
     int capLeft;

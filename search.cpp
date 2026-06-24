@@ -364,6 +364,76 @@ bool Search::canReverseFutilityPrune(
     return ss->staticEval >= beta + margin;
 }
 
+bool Search::canNullMovePrune(
+    const SearchStack* ss,
+    Depth depth,
+    Score beta,
+    bool isPv
+) const {
+    // Never null-move prune PV nodes.
+    if (isPv) {
+        return false;
+    }
+
+    // Never pass while in check.
+    if (ss->inCheck) {
+        return false;
+    }
+
+    // Keep null move out of very shallow nodes.
+    if (depth < NMP_MIN_DEPTH) {
+        return false;
+    }
+
+    // Do not null-move prune near mate scores.
+    if (std::abs(beta) > MATE_SCORE - 1000) {
+        return false;
+    }
+
+    if (std::abs(ss->staticEval) > MATE_SCORE - 1000) {
+        return false;
+    }
+
+    if (ss->staticEval < beta + NMP_EVAL_MARGIN) {
+        return false;
+    }
+
+    return true;
+}
+
+Depth Search::nullMoveReduction(
+    const SearchStack* ss,
+    Depth depth,
+    Score beta
+) const {
+    Depth reduction = NMP_BASE_REDUCTION;
+
+    reduction += depth / 3 - 1;
+
+    Score evalBonus = ss->staticEval - beta;
+
+    if (evalBonus < 0) {
+        evalBonus = 0;
+    }
+
+    if (evalBonus > NMP_MAX_EVAL_BONUS) {
+        evalBonus = NMP_MAX_EVAL_BONUS;
+    }
+
+    reduction += evalBonus / 150;
+
+    if (ss->improving) {
+        reduction += 1;
+    }
+    else {
+        reduction -= 1;
+    }
+
+    reduction = std::clamp<Depth>(reduction, 1, depth - 1);
+
+    return reduction;
+}
+
 Score Search::qsearch(
     Position& pos,
     Score alpha,
@@ -491,6 +561,35 @@ Score Search::negamax(
 
     if (canReverseFutilityPrune(ss, depth, beta, isPv)) {
         return ss->staticEval;
+    }
+
+    if (canNullMovePrune(ss, depth, beta, isPv)) {
+        const Depth reduction = nullMoveReduction(ss, depth, beta);
+        const Depth nullDepth = std::max<Depth>(0, depth - 1 - reduction);
+
+        NullMoveHistory nh = doNullMove(pos);
+
+        PVLine nullPv;
+
+        Score nullScore = -negamax(
+            pos,
+            ss + 1,
+            nullDepth,
+            -beta,
+            -beta + 1,
+            false,
+            nullPv
+        );
+
+        undoNullMove(pos, nh);
+
+        if (stopSearch) {
+            return ss->staticEval;
+        }
+
+        if (nullScore >= beta) {
+            return beta;
+        }
     }
 
     MoveList moves;

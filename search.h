@@ -10,6 +10,11 @@ constexpr int MAX_PLY = 128;
 constexpr Score ASPIRATION_INITIAL_WINDOW = 50;
 constexpr Score ASPIRATION_MAX_WINDOW = 2000;
 
+constexpr Depth NMP_MIN_DEPTH = 3;
+constexpr Depth NMP_BASE_REDUCTION = 3;
+constexpr Score NMP_EVAL_MARGIN = 50;
+constexpr Score NMP_MAX_EVAL_BONUS = 800;
+
 constexpr int MAX_SEARCH_PLY = 128;
 constexpr int KILLER_SLOTS = 2;
 
@@ -197,6 +202,19 @@ private:
         Depth depth,
         Score beta,
         bool isPv
+    ) const;
+
+    bool canNullMovePrune(
+        const SearchStack* ss,
+        Depth depth,
+        Score beta,
+        bool isPv
+    ) const;
+
+    Depth nullMoveReduction(
+        const SearchStack* ss,
+        Depth depth,
+        Score beta
     ) const;
 
     Depth lmrReduction(
