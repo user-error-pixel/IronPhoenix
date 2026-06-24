@@ -13,6 +13,9 @@ constexpr Score ASPIRATION_MAX_WINDOW = 2000;
 constexpr int MAX_SEARCH_PLY = 128;
 constexpr int KILLER_SLOTS = 2;
 
+constexpr int RFP_MARGIN = 150;
+constexpr int RFP_MAX_DEPTH = 3;
+
 constexpr int MAX_LMR_DEPTH = MAX_PLY + 8;
 constexpr int MAX_LMR_MOVES = MAX_MOVES;
 
@@ -188,6 +191,13 @@ private:
     void storeKiller(int ply, const Move& move);
 
     bool isKillerMove(int ply, const Move& move) const;
+
+    bool canReverseFutilityPrune(
+        const SearchStack* ss,
+        Depth depth,
+        Score beta,
+        bool isPv
+    ) const;
 
     Depth lmrReduction(
         const SearchStack* ss,

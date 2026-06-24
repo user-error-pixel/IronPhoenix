@@ -329,6 +329,41 @@ void Search::orderMoves(
     }
 }
 
+bool Search::canReverseFutilityPrune(
+    const SearchStack* ss,
+    Depth depth,
+    Score beta,
+    bool isPv
+) const {
+    if (isPv) {
+        return false;
+    }
+
+    if (ss->inCheck) {
+        return false;
+    }
+    
+    if (depth <= 0 || depth > RFP_MAX_DEPTH) {
+        return false;
+    }
+
+    if (std::abs(beta) > MATE_SCORE - 1000) {
+        return false;
+    }
+
+    if (std::abs(ss->staticEval) > MATE_SCORE - 1000) {
+        return false;
+    }
+
+    int margin = RFP_MARGIN * depth;
+
+    if (ss->improving) {
+        margin -= 50;
+    }
+
+    return ss->staticEval >= beta + margin;
+}
+
 Score Search::qsearch(
     Position& pos,
     Score alpha,
@@ -348,10 +383,6 @@ Score Search::qsearch(
 
     if (standPat >= beta) {
         return beta;
-    }
-
-    if (standPat < alpha - pieceValue[QUEEN]) {
-        return alpha;
     }
 
     if (standPat > alpha) {
@@ -457,6 +488,10 @@ Score Search::negamax(
     }
 
     ss->ttPv = ttPv;
+
+    if (canReverseFutilityPrune(ss, depth, beta, isPv)) {
+        return ss->staticEval;
+    }
 
     MoveList moves;
     generateLegalMoves(pos, moves, pos.turn);
